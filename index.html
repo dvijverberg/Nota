@@ -141,6 +141,13 @@
       font-size: 0.85rem;
     }
 
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    #refresh-btn,
     #logout-btn {
       font-family: inherit;
       font-size: 0.85rem;
@@ -151,11 +158,27 @@
       padding: 0.4rem 0.75rem;
       cursor: pointer;
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
     }
 
+    #refresh-btn {
+      padding: 0.4rem 0.6rem;
+    }
+
+    #refresh-btn:hover,
     #logout-btn:hover {
       color: var(--text);
       border-color: var(--text-muted);
+    }
+
+    #refresh-btn.spinning svg {
+      animation: spin 700ms linear;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     /* Toolbar: zoeken/filteren/sorteren + export */
@@ -444,7 +467,12 @@
     <div id="notes-view">
       <header>
         <span class="stats" id="notes-count"></span>
-        <button id="logout-btn">Uitloggen</button>
+        <div class="header-actions">
+          <button id="refresh-btn" aria-label="Vernieuwen" title="Vernieuwen">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
+          <button id="logout-btn">Uitloggen</button>
+        </div>
       </header>
 
       <div class="toolbar">
@@ -765,14 +793,13 @@
       });
     });
 
-    // Exporteren: los transcript per notitie (event delegation, zelfde reden
-    // als de kebab-menu's hierboven).
+    // Exporteren per notitie (event delegation, zodat dit ook werkt voor
+    // kaartjes die pas na filteren/sorteren worden bijgemaakt).
     notesList.addEventListener("click", (e) => {
-      const btn = e.target.closest(".export-single-btn");
-      if (!btn) return;
-      const note = allNotes.find((n) => String(n.id) === btn.dataset.id);
-      if (!note) return;
-      downloadBlob(`${noteTxtHeader(note)}\n${note.transcription || ""}\n`, `nota-${note.id}.txt`, "text/plain");
+      const exportBtn = e.target.closest(".export-single-btn");
+      if (!exportBtn) return;
+      const note = allNotes.find((n) => String(n.id) === exportBtn.dataset.id);
+      if (note) downloadBlob(`${noteTxtHeader(note)}\n${note.transcription || ""}\n`, `nota-${note.id}.txt`, "text/plain");
     });
 
     // Exporteren: hele (gefilterde/gesorteerde) overzicht
@@ -818,6 +845,15 @@
         return;
       }
       showNotes();
+    });
+
+    document.getElementById("refresh-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("refresh-btn");
+      btn.classList.add("spinning");
+      btn.disabled = true;
+      await showNotes();
+      btn.classList.remove("spinning");
+      btn.disabled = false;
     });
 
     document.getElementById("logout-btn").addEventListener("click", async () => {
