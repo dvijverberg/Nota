@@ -4,8 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="apple-touch-icon" href="favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3F83BF">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Nota">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
   <title>Nota</title>
@@ -17,6 +20,7 @@
       --accent-light: color-mix(in srgb, var(--accent) 12%, white);
       --highlight: #F2A2CE;
       --highlight-dark: color-mix(in srgb, var(--highlight) 82%, black);
+      --highlight-light: color-mix(in srgb, var(--highlight) 20%, white);
       --danger: #dc2626;
       --danger-light: #fef2f2;
       --bg: #F2F2F2;
@@ -40,7 +44,7 @@
     }
 
     .wrap {
-      max-width: 480px;
+      max-width: 520px;
       margin: 0 auto;
     }
 
@@ -129,6 +133,7 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 1.5rem;
+      gap: 0.6rem;
     }
 
     header .stats {
@@ -145,11 +150,135 @@
       border-radius: 8px;
       padding: 0.4rem 0.75rem;
       cursor: pointer;
+      white-space: nowrap;
     }
 
     #logout-btn:hover {
       color: var(--text);
       border-color: var(--text-muted);
+    }
+
+    /* Toolbar: zoeken/filteren/sorteren + export */
+    .toolbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .filters {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+      flex: 1;
+      min-width: 220px;
+    }
+
+    .filters input[type="text"],
+    .filters select {
+      font-family: inherit;
+      font-size: 0.88rem;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card-bg);
+      color: var(--text);
+    }
+
+    .filters input[type="text"] {
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .filters input:focus,
+    .filters select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    /* Kebab-dropdownmenu's: max 1 tegelijk open, sluiten bij klik ernaast
+       (via JS event delegation, werkt ook voor kaartjes die later dynamisch
+       bijkomen na filteren/sorteren). */
+    .menu {
+      position: relative;
+    }
+
+    .menu > summary {
+      list-style: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      color: var(--text-muted);
+    }
+
+    .menu > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .menu > summary:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .menu[open] > summary {
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+
+    .menu-list {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(16, 24, 40, 0.14);
+      padding: 0.4rem;
+      min-width: 200px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      animation: menu-in 120ms ease;
+    }
+
+    @keyframes menu-in {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      width: 100%;
+      padding: 0.5rem 0.6rem;
+      border-radius: 7px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      color: var(--text);
+      background: none;
+      border: none;
+      text-decoration: none;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .menu-item svg {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .menu-item:hover {
+      background: var(--bg);
     }
 
     .empty-state {
@@ -158,6 +287,18 @@
       padding: 3rem 1rem;
       border: 1px dashed var(--border);
       border-radius: 14px;
+    }
+
+    .empty-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      background: var(--highlight-light);
+      color: var(--highlight-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 0.8rem;
     }
 
     .note {
@@ -170,18 +311,27 @@
 
     .note-header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
+      justify-content: space-between;
       gap: 0.6rem;
       flex-wrap: wrap;
       margin-bottom: 0.6rem;
     }
 
+    .note-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
     .badge {
+      --label-color: #7a726c;
       display: inline-block;
       font-size: 0.78rem;
       font-weight: 600;
-      color: var(--accent);
-      background: var(--accent-light);
+      color: var(--label-color);
+      background: color-mix(in srgb, var(--label-color) 12%, white);
       padding: 0.2rem 0.6rem;
       border-radius: 999px;
     }
@@ -296,6 +446,38 @@
         <span class="stats" id="notes-count"></span>
         <button id="logout-btn">Uitloggen</button>
       </header>
+
+      <div class="toolbar">
+        <div class="filters">
+          <input type="text" id="search-input" placeholder="Zoeken in transcriptie...">
+          <select id="label-select">
+            <option value="">Alle labels</option>
+          </select>
+          <select id="sort-select">
+            <option value="newest">Nieuwste eerst</option>
+            <option value="oldest">Oudste eerst</option>
+            <option value="longest">Langste eerst</option>
+            <option value="shortest">Kortste eerst</option>
+          </select>
+        </div>
+
+        <details class="menu">
+          <summary aria-label="Exportopties" title="Exporteren">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+          </summary>
+          <div class="menu-list">
+            <button type="button" class="menu-item" id="export-txt">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+              Exporteer overzicht (.txt)
+            </button>
+            <button type="button" class="menu-item" id="export-csv">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+              Exporteer overzicht (.csv)
+            </button>
+          </div>
+        </details>
+      </div>
+
       <div id="notes-list"></div>
     </div>
   </div>
@@ -337,12 +519,33 @@
     // ("Identifier 'supabase' has already been declared").
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // Zelfde indeling als de kleurcodering op de hoofd-webinterface
+    // (server/app.py -- LABEL_COLORS), zodat beide overal gelijk ogen.
+    const LABEL_COLORS = {
+      idee: "#3F83BF",
+      werk: "#ea580c",
+      persoonlijk: "#9333ea",
+      notitie: "#16a34a",
+    };
+    const DEFAULT_LABEL_COLOR = "#7a726c";
+
     const loginView = document.getElementById("login-view");
     const notesView = document.getElementById("notes-view");
     const loginForm = document.getElementById("login-form");
     const loginError = document.getElementById("login-error");
     const notesList = document.getElementById("notes-list");
     const notesCount = document.getElementById("notes-count");
+    const searchInput = document.getElementById("search-input");
+    const labelSelect = document.getElementById("label-select");
+    const sortSelect = document.getElementById("sort-select");
+
+    let allNotes = [];
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str ?? "";
+      return div.innerHTML;
+    }
 
     function formatDisplayTime(value) {
       if (!value) return "onbekende tijd";
@@ -358,6 +561,123 @@
       return `${m}:${s}`;
     }
 
+    function formatTotalDuration(totalSeconds) {
+      if (!totalSeconds) return null;
+      if (totalSeconds < 60) return "<1 min";
+      return `${Math.round(totalSeconds / 60)} min`;
+    }
+
+    function noteTxtHeader(note) {
+      const displayTime = formatDisplayTime(note.note_timestamp || note.created_at);
+      return `[${note.label || "geen label"}] ${displayTime} (${note.duration_sec || "?"}s)`;
+    }
+
+    function csvField(value) {
+      return '"' + String(value ?? "").replace(/"/g, '""') + '"';
+    }
+
+    function downloadBlob(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function getFilteredSortedNotes() {
+      const query = searchInput.value.trim().toLowerCase();
+      const label = labelSelect.value;
+      const sort = sortSelect.value;
+
+      let filtered = allNotes.filter((note) => {
+        if (label && note.label !== label) return false;
+        if (query && !(note.transcription || "").toLowerCase().includes(query)) return false;
+        return true;
+      });
+
+      filtered.sort((a, b) => {
+        if (sort === "oldest") return a.id - b.id;
+        if (sort === "longest") return (b.duration_sec || 0) - (a.duration_sec || 0);
+        if (sort === "shortest") return (a.duration_sec || 0) - (b.duration_sec || 0);
+        return b.id - a.id; // newest (default)
+      });
+
+      return filtered;
+    }
+
+    function populateLabelSelect() {
+      const labels = [...new Set(allNotes.map((n) => n.label).filter(Boolean))].sort();
+      const current = labelSelect.value;
+      labelSelect.innerHTML = '<option value="">Alle labels</option>' +
+        labels.map((l) => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
+      labelSelect.value = current;
+    }
+
+    function render() {
+      const notes = getFilteredSortedNotes();
+      const totalDuration = formatTotalDuration(allNotes.reduce((sum, n) => sum + (n.duration_sec || 0), 0));
+      notesCount.textContent = `${allNotes.length} notitie${allNotes.length !== 1 ? "s" : ""}` +
+        (totalDuration ? ` · ${totalDuration} opgenomen` : "");
+
+      if (notes.length === 0) {
+        const isFiltered = searchInput.value.trim() || labelSelect.value;
+        notesList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </div>
+            <p>${isFiltered ? "Geen notities gevonden voor deze zoekopdracht." : "Nog geen notities gesynced."}</p>
+          </div>`;
+        return;
+      }
+
+      notesList.innerHTML = "";
+      for (const note of notes) {
+        const labelColor = LABEL_COLORS[note.label] || DEFAULT_LABEL_COLOR;
+        const card = document.createElement("div");
+        card.className = "note";
+        card.innerHTML = `
+          <div class="note-header">
+            <div class="note-header-left">
+              <span class="badge" style="--label-color: ${labelColor};">${escapeHtml(note.label || "geen label")}</span>
+              <span class="meta">${note.duration_sec || "?"}s · ${formatDisplayTime(note.note_timestamp || note.created_at)}</span>
+            </div>
+            <details class="menu">
+              <summary aria-label="Meer opties" title="Meer opties">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+              </summary>
+              <div class="menu-list">
+                <a class="menu-item" href="${note.audioUrl || "#"}" download>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                  Download audio
+                </a>
+                <button type="button" class="menu-item export-single-btn" data-id="${note.id}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                  Exporteer transcriptie
+                </button>
+              </div>
+            </details>
+          </div>
+          <div class="player">
+            <audio class="player-audio" src="${note.audioUrl || ""}" preload="metadata"></audio>
+            <button type="button" class="play-btn" aria-label="Afspelen">
+              <span class="icon-play"></span>
+              <span class="icon-pause"></span>
+            </button>
+            <input type="range" class="player-seek" value="0" min="0" max="0" step="0.1">
+            <span class="player-time">0:00 / 0:00</span>
+          </div>
+          <p class="transcription">${escapeHtml(note.transcription)}</p>
+        `;
+        notesList.appendChild(card);
+        wirePlayer(card);
+      }
+    }
+
     async function showNotes() {
       loginView.style.display = "none";
       notesView.style.display = "block";
@@ -369,45 +689,21 @@
         .order("id", { ascending: false });
 
       if (error) {
-        notesList.innerHTML = `<div class="empty-state"><p>Kon notities niet laden: ${error.message}</p></div>`;
+        notesList.innerHTML = `<div class="empty-state"><p>Kon notities niet laden: ${escapeHtml(error.message)}</p></div>`;
         return;
       }
 
-      notesCount.textContent = `${notes.length} notitie${notes.length !== 1 ? "s" : ""}`;
-
-      if (notes.length === 0) {
-        notesList.innerHTML = '<div class="empty-state"><p>Nog geen notities gesynced.</p></div>';
-        return;
-      }
-
-      notesList.innerHTML = "";
+      // Signed URLs één keer vooraf ophalen en aan elke notitie plakken --
+      // daarna kan filteren/sorteren/opnieuw tekenen puur client-side, zonder
+      // steeds opnieuw bij Supabase te hoeven vragen.
       for (const note of notes) {
-        const { data: signed } = await sb.storage
-          .from("audio")
-          .createSignedUrl(note.audio_path, 3600);
-        const audioUrl = signed ? signed.signedUrl : null;
-
-        const card = document.createElement("div");
-        card.className = "note";
-        card.innerHTML = `
-          <div class="note-header">
-            <span class="badge">${note.label || "geen label"}</span>
-            <span class="meta">${note.duration_sec || "?"}s · ${formatDisplayTime(note.note_timestamp || note.created_at)}</span>
-          </div>
-          <div class="player">
-            <audio class="player-audio" src="${audioUrl || ""}" preload="metadata"></audio>
-            <button type="button" class="play-btn" aria-label="Afspelen">
-              <span class="icon-play"></span>
-              <span class="icon-pause"></span>
-            </button>
-            <input type="range" class="player-seek" value="0" min="0" max="0" step="0.1">
-            <span class="player-time">0:00 / 0:00</span>
-          </div>
-          <p class="transcription">${note.transcription || ""}</p>
-        `;
-        notesList.appendChild(card);
-        wirePlayer(card);
+        const { data: signed } = await sb.storage.from("audio").createSignedUrl(note.audio_path, 3600);
+        note.audioUrl = signed ? signed.signedUrl : null;
       }
+
+      allNotes = notes;
+      populateLabelSelect();
+      render();
     }
 
     function wirePlayer(card) {
@@ -450,6 +746,65 @@
       seek.addEventListener("pointerup", () => { seeking = false; });
       seek.addEventListener("input", () => { audio.currentTime = seek.value; });
     }
+
+    // Kebab-menu's: max 1 tegelijk open, en sluiten bij een klik ernaast.
+    // Via event delegation (niet per-element forEach) zodat dit ook werkt
+    // voor notitiekaartjes die pas na filteren/sorteren worden bijgemaakt.
+    document.addEventListener("toggle", (e) => {
+      if (!e.target.matches || !e.target.matches("details.menu")) return;
+      if (e.target.open) {
+        document.querySelectorAll("details.menu[open]").forEach((other) => {
+          if (other !== e.target) other.removeAttribute("open");
+        });
+      }
+    }, true);
+
+    document.addEventListener("click", (e) => {
+      document.querySelectorAll("details.menu[open]").forEach((menu) => {
+        if (!menu.contains(e.target)) menu.removeAttribute("open");
+      });
+    });
+
+    // Exporteren: los transcript per notitie (event delegation, zelfde reden
+    // als de kebab-menu's hierboven).
+    notesList.addEventListener("click", (e) => {
+      const btn = e.target.closest(".export-single-btn");
+      if (!btn) return;
+      const note = allNotes.find((n) => String(n.id) === btn.dataset.id);
+      if (!note) return;
+      downloadBlob(`${noteTxtHeader(note)}\n${note.transcription || ""}\n`, `nota-${note.id}.txt`, "text/plain");
+    });
+
+    // Exporteren: hele (gefilterde/gesorteerde) overzicht
+    document.getElementById("export-txt").addEventListener("click", () => {
+      const notes = getFilteredSortedNotes();
+      const lines = [];
+      for (const note of notes) {
+        lines.push(noteTxtHeader(note));
+        lines.push(note.transcription || "");
+        lines.push("");
+      }
+      downloadBlob(lines.join("\n"), "nota-export.txt", "text/plain");
+    });
+
+    document.getElementById("export-csv").addEventListener("click", () => {
+      const notes = getFilteredSortedNotes();
+      const rows = [["label", "tijdstip", "duur_sec", "transcriptie"]];
+      for (const note of notes) {
+        rows.push([
+          note.label || "",
+          formatDisplayTime(note.note_timestamp || note.created_at),
+          note.duration_sec || "",
+          note.transcription || "",
+        ]);
+      }
+      const csv = rows.map((row) => row.map(csvField).join(",")).join("\r\n");
+      downloadBlob("﻿" + csv, "nota-export.csv", "text/csv");
+    });
+
+    searchInput.addEventListener("input", render);
+    labelSelect.addEventListener("change", render);
+    sortSelect.addEventListener("change", render);
 
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
