@@ -434,9 +434,87 @@
       text-align: right;
     }
 
+    .note-title {
+      font-size: 1.02rem;
+      font-weight: 700;
+      margin: 0.2rem 0 0.3rem;
+      color: var(--text);
+    }
+
+    .note-summary {
+      margin: 0 0 0.5rem;
+      color: var(--text);
+    }
+
+    .action-items {
+      list-style: none;
+      margin: 0 0 0.6rem;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .action-items li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.55rem;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+
+    .action-items li::before {
+      content: "";
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+      margin-top: 0.15rem;
+      border: 1.5px solid var(--accent);
+      border-radius: 4px;
+    }
+
+    .transcription-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin: 0.7rem 0 0.2rem;
+    }
+
     .transcription {
       white-space: pre-wrap;
       margin: 0.4rem 0 0;
+    }
+
+    .transcription.clamp {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .transcription.clamp.expanded {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+
+    .toggle-btn {
+      display: none;
+      margin-top: 0.35rem;
+      font-family: inherit;
+      font-size: 0.83rem;
+      font-weight: 600;
+      color: var(--accent);
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .toggle-btn:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -690,6 +768,12 @@
               </div>
             </details>
           </div>
+          ${note.title ? `<h3 class="note-title">${escapeHtml(note.title)}</h3>` : ""}
+          ${note.summary ? `<p class="note-summary">${escapeHtml(note.summary)}</p>` : ""}
+          ${note.actionItems && note.actionItems.length ? `
+            <ul class="action-items">
+              ${note.actionItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+            </ul>` : ""}
           <div class="player">
             <audio class="player-audio" src="${note.audioUrl || ""}" preload="metadata"></audio>
             <button type="button" class="play-btn" aria-label="Afspelen">
@@ -699,10 +783,26 @@
             <input type="range" class="player-seek" value="0" min="0" max="0" step="0.1">
             <span class="player-time">0:00 / 0:00</span>
           </div>
-          <p class="transcription">${escapeHtml(note.transcription)}</p>
+          ${note.title ? '<p class="transcription-label">Transcriptie</p>' : ""}
+          <p class="transcription clamp">${escapeHtml(note.transcription)}</p>
+          <button type="button" class="toggle-btn">Toon meer</button>
         `;
         notesList.appendChild(card);
         wirePlayer(card);
+        wireClamp(card);
+      }
+    }
+
+    function wireClamp(card) {
+      const p = card.querySelector(".transcription");
+      const btn = card.querySelector(".toggle-btn");
+      if (!p || !btn) return;
+      if (p.scrollHeight > p.clientHeight + 1) {
+        btn.style.display = "inline-block";
+        btn.addEventListener("click", () => {
+          const expanded = p.classList.toggle("expanded");
+          btn.textContent = expanded ? "Toon minder" : "Toon meer";
+        });
       }
     }
 
@@ -727,6 +827,11 @@
       for (const note of notes) {
         const { data: signed } = await sb.storage.from("audio").createSignedUrl(note.audio_path, 3600);
         note.audioUrl = signed ? signed.signedUrl : null;
+        try {
+          note.actionItems = note.action_items ? JSON.parse(note.action_items) : [];
+        } catch {
+          note.actionItems = [];
+        }
       }
 
       allNotes = notes;
