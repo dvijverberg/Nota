@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="favicon.png">
+  <meta name="theme-color" content="#3F83BF">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <title>Nota</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --accent: #3F83BF;
+      --accent-dark: #040D40;
+      --accent-light: color-mix(in srgb, var(--accent) 12%, white);
+      --highlight: #F2A2CE;
+      --highlight-dark: color-mix(in srgb, var(--highlight) 82%, black);
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --bg: #F2F2F2;
+      --card-bg: #ffffff;
+      --text: #22181C;
+      --text-muted: color-mix(in srgb, var(--text) 45%, white);
+      --border: color-mix(in srgb, var(--text) 12%, white);
+      --font: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2.5rem 1.25rem 4rem;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .brand {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    .brand img {
+      height: 56px;
+      width: auto;
+    }
+
+    /* Login-scherm */
+    #login-view {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem 1.5rem;
+    }
+
+    #login-view h1 {
+      font-size: 1.2rem;
+      margin: 0 0 1.1rem;
+      text-align: center;
+    }
+
+    #login-view label {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin: 0 0 0.3rem;
+    }
+
+    #login-view input {
+      width: 100%;
+      font-family: inherit;
+      font-size: 0.95rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+
+    #login-view input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    #login-view button {
+      width: 100%;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 0.65rem;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+    }
+
+    #login-view button:hover {
+      background: var(--accent-dark);
+    }
+
+    #login-error {
+      display: none;
+      color: var(--danger);
+      background: var(--danger-light);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+
+    /* Notities-scherm */
+    #notes-view {
+      display: none;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+
+    header .stats {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    #logout-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.4rem 0.75rem;
+      cursor: pointer;
+    }
+
+    #logout-btn:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 3rem 1rem;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+    }
+
+    .note {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.1rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .note-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.6rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-light);
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+    }
+
+    .meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .player {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin: 0.7rem 0;
+    }
+
+    .play-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--accent);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .play-btn:hover { background: var(--accent-dark); }
+
+    .icon-play {
+      width: 0; height: 0;
+      border-style: solid;
+      border-width: 6px 0 6px 10px;
+      border-color: transparent transparent transparent white;
+      margin-left: 2px;
+    }
+
+    .icon-pause { display: none; position: relative; width: 10px; height: 12px; }
+    .icon-pause::before, .icon-pause::after {
+      content: ""; position: absolute; top: 0; width: 3px; height: 12px; background: white;
+    }
+    .icon-pause::before { left: 0; }
+    .icon-pause::after { right: 0; }
+    .player.playing .icon-play { display: none; }
+    .player.playing .icon-pause { display: block; }
+
+    .player-seek {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    .player-seek::-webkit-slider-runnable-track {
+      height: 4px; border-radius: 999px; background: var(--border);
+    }
+    .player-seek::-moz-range-track {
+      height: 4px; border-radius: 999px; background: var(--border); border: none;
+    }
+    .player-seek::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 12px; height: 12px; margin-top: -4px;
+      border-radius: 50%; background: var(--highlight); cursor: pointer;
+    }
+    .player-seek::-moz-range-thumb {
+      width: 12px; height: 12px; border: none;
+      border-radius: 50%; background: var(--highlight); cursor: pointer;
+    }
+
+    .player-time {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      min-width: 5.5em;
+      text-align: right;
+    }
+
+    .transcription {
+      white-space: pre-wrap;
+      margin: 0.4rem 0 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand"><img src="logo.png" alt="Nota"></div>
+
+    <div id="login-view">
+      <h1>Log in om je notities te zien</h1>
+      <div id="login-error"></div>
+      <form id="login-form">
+        <label for="email">E-mail</label>
+        <input type="email" id="email" autocomplete="username" required>
+        <label for="password">Wachtwoord</label>
+        <input type="password" id="password" autocomplete="current-password" required>
+        <button type="submit">Inloggen</button>
+      </form>
+    </div>
+
+    <div id="notes-view">
+      <header>
+        <span class="stats" id="notes-count"></span>
+        <button id="logout-btn">Uitloggen</button>
+      </header>
+      <div id="notes-list"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://rqhrtiexwmgrlzgvrigm.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_GQKT1FiA-eudNrKfOY7jcQ_NMrWQQ8Y";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const loginView = document.getElementById("login-view");
+    const notesView = document.getElementById("notes-view");
+    const loginForm = document.getElementById("login-form");
+    const loginError = document.getElementById("login-error");
+    const notesList = document.getElementById("notes-list");
+    const notesCount = document.getElementById("notes-count");
+
+    function formatDisplayTime(value) {
+      if (!value) return "onbekende tijd";
+      const d = new Date(value);
+      if (isNaN(d)) return value;
+      return d.toLocaleString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatTime(sec) {
+      if (!isFinite(sec)) return "0:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60).toString().padStart(2, "0");
+      return `${m}:${s}`;
+    }
+
+    async function showNotes() {
+      loginView.style.display = "none";
+      notesView.style.display = "block";
+      notesList.innerHTML = '<p style="color: var(--text-muted);">Laden...</p>';
+
+      const { data: notes, error } = await supabase
+        .from("notes")
+        .select("*")
+        .order("id", { ascending: false });
+
+      if (error) {
+        notesList.innerHTML = `<div class="empty-state"><p>Kon notities niet laden: ${error.message}</p></div>`;
+        return;
+      }
+
+      notesCount.textContent = `${notes.length} notitie${notes.length !== 1 ? "s" : ""}`;
+
+      if (notes.length === 0) {
+        notesList.innerHTML = '<div class="empty-state"><p>Nog geen notities gesynced.</p></div>';
+        return;
+      }
+
+      notesList.innerHTML = "";
+      for (const note of notes) {
+        const { data: signed } = await supabase.storage
+          .from("audio")
+          .createSignedUrl(note.audio_path, 3600);
+        const audioUrl = signed ? signed.signedUrl : null;
+
+        const card = document.createElement("div");
+        card.className = "note";
+        card.innerHTML = `
+          <div class="note-header">
+            <span class="badge">${note.label || "geen label"}</span>
+            <span class="meta">${note.duration_sec || "?"}s · ${formatDisplayTime(note.note_timestamp || note.created_at)}</span>
+          </div>
+          <div class="player">
+            <audio class="player-audio" src="${audioUrl || ""}" preload="metadata"></audio>
+            <button type="button" class="play-btn" aria-label="Afspelen">
+              <span class="icon-play"></span>
+              <span class="icon-pause"></span>
+            </button>
+            <input type="range" class="player-seek" value="0" min="0" max="0" step="0.1">
+            <span class="player-time">0:00 / 0:00</span>
+          </div>
+          <p class="transcription">${note.transcription || ""}</p>
+        `;
+        notesList.appendChild(card);
+        wirePlayer(card);
+      }
+    }
+
+    function wirePlayer(card) {
+      const player = card.querySelector(".player");
+      const audio = player.querySelector(".player-audio");
+      const playBtn = player.querySelector(".play-btn");
+      const seek = player.querySelector(".player-seek");
+      const timeLabel = player.querySelector(".player-time");
+      let seeking = false;
+
+      audio.addEventListener("loadedmetadata", () => {
+        seek.max = audio.duration;
+        timeLabel.textContent = `${formatTime(0)} / ${formatTime(audio.duration)}`;
+      });
+
+      audio.addEventListener("timeupdate", () => {
+        if (!seeking) seek.value = audio.currentTime;
+        timeLabel.textContent = `${formatTime(audio.currentTime)} / ${formatTime(audio.duration)}`;
+      });
+
+      audio.addEventListener("ended", () => player.classList.remove("playing"));
+
+      playBtn.addEventListener("click", () => {
+        document.querySelectorAll("audio.player-audio").forEach((other) => {
+          if (other !== audio && !other.paused) {
+            other.pause();
+            other.closest(".player").classList.remove("playing");
+          }
+        });
+        if (audio.paused) {
+          audio.play();
+          player.classList.add("playing");
+        } else {
+          audio.pause();
+          player.classList.remove("playing");
+        }
+      });
+
+      seek.addEventListener("pointerdown", () => { seeking = true; });
+      seek.addEventListener("pointerup", () => { seeking = false; });
+      seek.addEventListener("input", () => { audio.currentTime = seek.value; });
+    }
+
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      loginError.style.display = "none";
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        loginError.textContent = "Inloggen mislukt: " + error.message;
+        loginError.style.display = "block";
+        return;
+      }
+      showNotes();
+    });
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await supabase.auth.signOut();
+      notesView.style.display = "none";
+      loginView.style.display = "block";
+    });
+
+    // Automatisch inloggen als er al een geldige sessie is (blijft staan
+    // tussen bezoeken, zodat je 'm niet elke keer opnieuw hoeft in te loggen).
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) showNotes();
+    });
+  </script>
+</body>
+</html>
