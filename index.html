@@ -331,7 +331,11 @@
 
     const SUPABASE_URL = "https://rqhrtiexwmgrlzgvrigm.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_GQKT1FiA-eudNrKfOY7jcQ_NMrWQQ8Y";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // "sb" i.p.v. "supabase" als variabelenaam: de library zelf claimt de
+    // naam "supabase" ook al als eigen globale variabele (niet alleen
+    // window.supabase), dus const supabase = ... botste daarmee
+    // ("Identifier 'supabase' has already been declared").
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const loginView = document.getElementById("login-view");
     const notesView = document.getElementById("notes-view");
@@ -359,7 +363,7 @@
       notesView.style.display = "block";
       notesList.innerHTML = '<p style="color: var(--text-muted);">Laden...</p>';
 
-      const { data: notes, error } = await supabase
+      const { data: notes, error } = await sb
         .from("notes")
         .select("*")
         .order("id", { ascending: false });
@@ -378,7 +382,7 @@
 
       notesList.innerHTML = "";
       for (const note of notes) {
-        const { data: signed } = await supabase.storage
+        const { data: signed } = await sb.storage
           .from("audio")
           .createSignedUrl(note.audio_path, 3600);
         const audioUrl = signed ? signed.signedUrl : null;
@@ -452,7 +456,7 @@
       loginError.style.display = "none";
       const email = document.getElementById("email").value;
       const password = document.getElementById("password").value;
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) {
         loginError.textContent = "Inloggen mislukt: " + error.message;
         loginError.style.display = "block";
@@ -462,14 +466,14 @@
     });
 
     document.getElementById("logout-btn").addEventListener("click", async () => {
-      await supabase.auth.signOut();
+      await sb.auth.signOut();
       notesView.style.display = "none";
       loginView.style.display = "block";
     });
 
     // Automatisch inloggen als er al een geldige sessie is (blijft staan
     // tussen bezoeken, zodat je 'm niet elke keer opnieuw hoeft in te loggen).
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    sb.auth.getSession().then(({ data: { session } }) => {
       if (session) showNotes();
     });
   </script>
