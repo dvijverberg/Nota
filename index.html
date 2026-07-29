@@ -292,8 +292,18 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Zelf meegeleverd i.p.v. een externe CDN-link -- op sommige mobiele
+       netwerken/browsers laadde die onbetrouwbaar, waardoor de hele pagina
+       (incl. het inlogformulier) stil bleef hangen zonder foutmelding. -->
+  <script src="supabase.min.js"></script>
   <script>
+    if (!window.supabase) {
+      document.getElementById("login-error").textContent =
+        "De Supabase-bibliotheek kon niet laden. Ververs de pagina en probeer opnieuw.";
+      document.getElementById("login-error").style.display = "block";
+      throw new Error("window.supabase ontbreekt -- supabase.min.js niet geladen");
+    }
+
     const SUPABASE_URL = "https://rqhrtiexwmgrlzgvrigm.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_GQKT1FiA-eudNrKfOY7jcQ_NMrWQQ8Y";
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
