@@ -268,6 +268,14 @@
   </style>
 </head>
 <body>
+  <noscript>
+    <div class="wrap">
+      <p style="color: #dc2626; text-align: center;">
+        Deze pagina heeft JavaScript nodig om te werken. Zet JavaScript aan in je browserinstellingen en herlaad de pagina.
+      </p>
+    </div>
+  </noscript>
+
   <div class="wrap">
     <div class="brand"><img src="logo.png" alt="Nota"></div>
 
@@ -292,15 +300,32 @@
     </div>
   </div>
 
+  <!-- Vangnet: toont ELKE JS-fout zichtbaar op de pagina i.p.v. dat het
+       inlogformulier stil "kapot" blijft zonder enige foutmelding. Staat
+       bewust als allereerste script, zodat ook fouten uit de scripts
+       hieronder (bv. het laden van supabase.min.js) hierdoor gevangen worden. -->
+  <script>
+    function showFatalError(message) {
+      var el = document.getElementById("login-error");
+      if (!el) return;
+      el.textContent = "Er ging iets mis: " + message;
+      el.style.display = "block";
+    }
+    window.addEventListener("error", function (e) {
+      showFatalError(e.message + " (" + (e.filename || "onbekend bestand") + ":" + e.lineno + ")");
+    });
+    window.addEventListener("unhandledrejection", function (e) {
+      showFatalError(String(e.reason));
+    });
+  </script>
+
   <!-- Zelf meegeleverd i.p.v. een externe CDN-link -- op sommige mobiele
        netwerken/browsers laadde die onbetrouwbaar, waardoor de hele pagina
        (incl. het inlogformulier) stil bleef hangen zonder foutmelding. -->
   <script src="supabase.min.js"></script>
   <script>
     if (!window.supabase) {
-      document.getElementById("login-error").textContent =
-        "De Supabase-bibliotheek kon niet laden. Ververs de pagina en probeer opnieuw.";
-      document.getElementById("login-error").style.display = "block";
+      showFatalError("De Supabase-bibliotheek kon niet laden. Ververs de pagina en probeer opnieuw.");
       throw new Error("window.supabase ontbreekt -- supabase.min.js niet geladen");
     }
 
