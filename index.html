@@ -463,14 +463,46 @@
       color: var(--text);
     }
 
-    .action-items li::before {
-      content: "";
+    .action-item-toggle {
       flex-shrink: 0;
-      width: 14px;
-      height: 14px;
-      margin-top: 0.15rem;
+      width: 16px;
+      height: 16px;
+      margin-top: 0.1rem;
+      padding: 0;
       border: 1.5px solid var(--accent);
       border-radius: 4px;
+      background: none;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .action-item-toggle:hover {
+      background: var(--accent-light);
+    }
+
+    .action-items li.done .action-item-toggle {
+      background: var(--accent);
+    }
+
+    .action-items li.done .action-item-toggle::after {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 1px;
+      width: 4px;
+      height: 8px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .action-item-text {
+      flex: 1;
+    }
+
+    .action-items li.done .action-item-text {
+      text-decoration: line-through;
+      color: var(--text-muted);
     }
 
     .transcription-label {
@@ -647,6 +679,23 @@
 
     let allNotes = [];
 
+    // Zelfde normalisatie als server/app.py's normalize_action_items(): elk
+    // item wordt een {text, done}-object, ook oudere kale-string-notities
+    // die nog niet gebackfilled zijn crashen hierdoor niet.
+    function normalizeActionItems(raw) {
+      let items;
+      try {
+        items = raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(items)) return [];
+      return items.map((item) => {
+        if (typeof item === "string") return { text: item, done: false };
+        return { text: item.text || "", done: !!item.done };
+      });
+    }
+
     function escapeHtml(str) {
       const div = document.createElement("div");
       div.textContent = str ?? "";
@@ -772,7 +821,18 @@
           ${note.summary ? `<p class="note-summary">${escapeHtml(note.summary)}</p>` : ""}
           ${note.actionItems && note.actionItems.length ? `
             <ul class="action-items">
-              ${note.actionItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+              ${note.actionItems.map((item, i) => `
+                <li class="${item.done ? "done" : ""}">
+                  <button
+                    type="button"
+                    class="action-item-toggle"
+                    data-note-id="${note.id}"
+                    data-item-index="${i}"
+                    aria-pressed="${item.done ? "true" : "false"}"
+                    aria-label="Actiepunt ${item.done ? "ongedaan maken" : "afvinken"}"
+                  ></button>
+                  <span class="action-item-text">${escapeHtml(item.text)}</span>
+                </li>`).join("")}
             </ul>` : ""}
           <div class="player">
             <audio class="player-audio" src="${note.audioUrl || ""}" preload="metadata"></audio>
@@ -827,11 +887,7 @@
       for (const note of notes) {
         const { data: signed } = await sb.storage.from("audio").createSignedUrl(note.audio_path, 3600);
         note.audioUrl = signed ? signed.signedUrl : null;
-        try {
-          note.actionItems = note.action_items ? JSON.parse(note.action_items) : [];
-        } catch {
-          note.actionItems = [];
-        }
+        note.actionItems = normalizeActionItems(note.action_items);
       }
 
       allNotes = notes;
@@ -905,6 +961,35 @@
       if (!exportBtn) return;
       const note = allNotes.find((n) => String(n.id) === exportBtn.dataset.id);
       if (note) downloadBlob(`${noteTxtHeader(note)}\n${note.transcription || ""}\n`, `nota-${note.id}.txt`, "text/plain");
+    });
+
+    // Actiepunten afvinken: schrijft direct naar Supabase (er is geen server
+    // tussen de telefoon en de cloud). Optimistisch bijgewerkt in de UI en in
+    // allNotes (zodat een filter/sorteer-herrender de status niet verliest);
+    // bij een schrijffout wordt de knop weer teruggezet.
+    notesList.addEventListener("click", async (e) => {
+      const toggleBtn = e.target.closest(".action-item-toggle");
+      if (!toggleBtn) return;
+      const note = allNotes.find((n) => String(n.id) === toggleBtn.dataset.noteId);
+      const index = Number(toggleBtn.dataset.itemIndex);
+      if (!note || !note.actionItems[index]) return;
+
+      const li = toggleBtn.closest("li");
+      const previousDone = note.actionItems[index].done;
+      note.actionItems[index].done = !previousDone;
+      li.classList.toggle("done", note.actionItems[index].done);
+      toggleBtn.setAttribute("aria-pressed", String(note.actionItems[index].done));
+
+      const { error } = await sb
+        .from("notes")
+        .update({ action_items: JSON.stringify(note.actionItems) })
+        .eq("id", note.id);
+
+      if (error) {
+        note.actionItems[index].done = previousDone;
+        li.classList.toggle("done", previousDone);
+        toggleBtn.setAttribute("aria-pressed", String(previousDone));
+      }
     });
 
     // Exporteren: hele (gefilterde/gesorteerde) overzicht
