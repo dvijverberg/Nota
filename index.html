@@ -745,13 +745,15 @@
 
     // Vaste volgorde voor het to-do-overzicht bovenaan, zelfde categorieën
     // als server/app.py's TODO_CATEGORIES.
-    const TODO_CATEGORIES = ["persoonlijk", "werk", "sport", "reizen", "overig"];
+    // Bewust geen "overig"-vangnetcategorie (5 kolommen gaf een lelijke
+    // 4+1-layout) -- notities met een niet-herkend label worden simpelweg
+    // overgeslagen in dit overzicht, zie renderTodoOverview().
+    const TODO_CATEGORIES = ["persoonlijk", "werk", "sport", "reizen"];
     const TODO_CATEGORY_NAMES = {
       persoonlijk: "Persoonlijk",
       werk: "Werk",
       sport: "Sport",
       reizen: "Reizen",
-      overig: "Overig",
     };
 
     const loginView = document.getElementById("login-view");
@@ -956,10 +958,10 @@
       for (const cat of TODO_CATEGORIES) columns[cat] = [];
 
       for (const note of allNotes) {
-        const category = TODO_CATEGORIES.includes(note.label) ? note.label : "overig";
+        if (!TODO_CATEGORIES.includes(note.label)) continue;
         (note.actionItems || []).forEach((item, index) => {
           if (!item.done) {
-            columns[category].push({ noteId: note.id, itemIndex: index, text: item.text });
+            columns[note.label].push({ noteId: note.id, itemIndex: index, text: item.text });
           }
         });
       }
