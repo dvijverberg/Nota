@@ -181,6 +181,66 @@
       to { transform: rotate(360deg); }
     }
 
+    /* To-do-overzicht: één kolom per label-categorie, alleen openstaande
+       actiepunten -- zelfde opzet als de hoofd-webinterface. Op de smalle
+       telefoonbreedte stapelt dit met auto-fit vanzelf naar 1-2 kolommen. */
+    #todo-overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.7rem;
+      margin: 1.5rem 0;
+    }
+
+    .todo-column {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.8rem 0.85rem;
+      min-width: 0;
+    }
+
+    .todo-column-header {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.55rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .todo-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    .todo-column-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .todo-column-count {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .todo-column-list {
+      margin: 0;
+    }
+
+    .todo-column-list .action-item-text {
+      font-size: 0.82rem;
+    }
+
+    .todo-column-empty {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin: 0;
+    }
+
     /* Toolbar: zoeken/filteren/sorteren + export */
     .toolbar {
       display: flex;
@@ -597,6 +657,8 @@
         </div>
       </header>
 
+      <div id="todo-overview"></div>
+
       <div class="toolbar">
         <div class="filters">
           <input type="text" id="search-input" placeholder="Zoeken in transcriptie...">
@@ -671,19 +733,33 @@
 
     // Zelfde indeling als de kleurcodering op de hoofd-webinterface
     // (server/app.py -- LABEL_COLORS), zodat beide overal gelijk ogen.
+    // "overig" heeft bewust geen eigen entry, valt terug op
+    // DEFAULT_LABEL_COLOR -- zelfde reden als aan de server-kant.
     const LABEL_COLORS = {
-      idee: "#3F83BF",
-      werk: "#ea580c",
       persoonlijk: "#9333ea",
-      notitie: "#16a34a",
+      werk: "#ea580c",
+      sport: "#16a34a",
+      reizen: "#0d9488",
     };
     const DEFAULT_LABEL_COLOR = "#7a726c";
+
+    // Vaste volgorde voor het to-do-overzicht bovenaan, zelfde categorieën
+    // als server/app.py's TODO_CATEGORIES.
+    const TODO_CATEGORIES = ["persoonlijk", "werk", "sport", "reizen", "overig"];
+    const TODO_CATEGORY_NAMES = {
+      persoonlijk: "Persoonlijk",
+      werk: "Werk",
+      sport: "Sport",
+      reizen: "Reizen",
+      overig: "Overig",
+    };
 
     const loginView = document.getElementById("login-view");
     const notesView = document.getElementById("notes-view");
     const loginForm = document.getElementById("login-form");
     const loginError = document.getElementById("login-error");
     const notesList = document.getElementById("notes-list");
+    const todoOverviewEl = document.getElementById("todo-overview");
     const notesCount = document.getElementById("notes-count");
     const searchInput = document.getElementById("search-input");
     const labelSelect = document.getElementById("label-select");
@@ -869,6 +945,63 @@
       }
     }
 
+    // Groepeert alle open (niet-afgevinkte) actiepunten van alle notities
+    // per label-categorie -- zelfde logica als server/app.py's
+    // get_open_todos_by_category(). Wordt na elke showNotes() opnieuw
+    // getekend (niet bij elke toggle): een afgevinkt item blijft, net als op
+    // de hoofd-webinterface, tot de volgende keer verversen doorgestreept
+    // zichtbaar i.p.v. meteen te verdwijnen.
+    function renderTodoOverview() {
+      const columns = {};
+      for (const cat of TODO_CATEGORIES) columns[cat] = [];
+
+      for (const note of allNotes) {
+        const category = TODO_CATEGORIES.includes(note.label) ? note.label : "overig";
+        (note.actionItems || []).forEach((item, index) => {
+          if (!item.done) {
+            columns[category].push({ noteId: note.id, itemIndex: index, text: item.text });
+          }
+        });
+      }
+
+      const hasAnyOpen = TODO_CATEGORIES.some((cat) => columns[cat].length > 0);
+      if (!hasAnyOpen) {
+        todoOverviewEl.innerHTML = "";
+        return;
+      }
+
+      todoOverviewEl.innerHTML = TODO_CATEGORIES.map((cat) => {
+        const items = columns[cat];
+        const color = LABEL_COLORS[cat] || DEFAULT_LABEL_COLOR;
+        const list = items.length
+          ? `<ul class="action-items todo-column-list">
+              ${items.map((item) => `
+                <li>
+                  <button
+                    type="button"
+                    class="action-item-toggle"
+                    data-note-id="${item.noteId}"
+                    data-item-index="${item.itemIndex}"
+                    aria-pressed="false"
+                    aria-label="Actiepunt afvinken"
+                  ></button>
+                  <span class="action-item-text">${escapeHtml(item.text)}</span>
+                </li>`).join("")}
+            </ul>`
+          : `<p class="todo-column-empty">Niets openstaand</p>`;
+
+        return `
+          <div class="todo-column">
+            <div class="todo-column-header">
+              <span class="todo-dot" style="background: ${color};"></span>
+              <span class="todo-column-name">${escapeHtml(TODO_CATEGORY_NAMES[cat])}</span>
+              ${items.length ? `<span class="todo-column-count">${items.length}</span>` : ""}
+            </div>
+            ${list}
+          </div>`;
+      }).join("");
+    }
+
     function wireClamp(card) {
       const p = card.querySelector(".transcription");
       const btn = card.querySelector(".toggle-btn");
@@ -908,6 +1041,7 @@
 
       allNotes = notes;
       populateLabelSelect();
+      renderTodoOverview();
       render();
     }
 
@@ -1006,8 +1140,10 @@
     // Actiepunten afvinken: schrijft direct naar Supabase (er is geen server
     // tussen de telefoon en de cloud). Optimistisch bijgewerkt in de UI en in
     // allNotes (zodat een filter/sorteer-herrender de status niet verliest);
-    // bij een schrijffout wordt de knop weer teruggezet.
-    notesList.addEventListener("click", async (e) => {
+    // bij een schrijffout wordt de knop weer teruggezet. Op document-niveau
+    // (niet alleen notesList) zodat dit ook werkt voor de checkboxen in het
+    // to-do-overzicht bovenaan de pagina.
+    document.addEventListener("click", async (e) => {
       const toggleBtn = e.target.closest(".action-item-toggle");
       if (!toggleBtn) return;
       const note = allNotes.find((n) => String(n.id) === toggleBtn.dataset.noteId);
