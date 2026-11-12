@@ -55,7 +55,7 @@ export function openRecorder({ project_id = null } = {}) {
       <div class="rec-project"><button type="button" class="chip" data-a="project"></button></div>
       <div class="sheet-actions">
         <button type="button" class="btn-cancel" data-a="cancel">Annuleren</button>
-        <button type="button" class="btn-ok rec-stop" data-a="save" disabled>${icon("stop", "icon-sm")}Stoppen en opslaan</button>
+        <button type="button" class="btn-ok rec-stop" data-a="save" disabled>${icon("stop", "icon-sm")}Opslaan</button>
       </div>`,
     onClose: () => { cleanup(); },
   });

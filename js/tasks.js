@@ -54,7 +54,7 @@ export function taskRow(t, opts = {}) {
       <div class="task-row">
         <button type="button" class="check prio-${prio}" aria-pressed="${!!t.completed}"
           aria-label="${t.completed ? "Markeer als open" : "Afvinken"}: ${escapeHtml(t.title)}">${CHECK_SVG}</button>
-        <div class="task-body">
+        <div class="task-body" tabindex="0" role="button" aria-label="Taak openen: ${escapeHtml(t.title)}">
           <span class="task-title">${highlight(t.title, opts.query)}</span>
           ${opts.query && t.description && t.description.toLowerCase().includes(opts.query.toLowerCase())
             ? `<span class="task-desc">${highlight(snippet(t.description, opts.query), opts.query)}</span>` : ""}
@@ -183,7 +183,7 @@ export function bindTaskInteractions(root, { onSchedule, keepVisible = () => fal
   root.addEventListener("keydown", (e) => {
     const li = e.target.closest && e.target.closest("li.task");
     if (!li || e.target.closest("button")) return;
-    if (e.key === "Enter") actions.openTask(li.dataset.taskId);
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); actions.openTask(li.dataset.taskId); }
   });
 
   if (!gestures) return;

@@ -62,6 +62,12 @@ export const actions = {
 };
 
 // ---------- Toast ----------
+// Alleen bij snel toevoegen (toetsenbord open) staat de toast bovenaan.
+function topToast() {
+  const top = sheetStack[sheetStack.length - 1];
+  return !!top && top.el.classList.contains("quickadd");
+}
+
 let toastTimer;
 export function toast(message, { action, duration } = {}) {
   const el = $("toast");
@@ -71,7 +77,7 @@ export function toast(message, { action, duration } = {}) {
   el.classList.toggle("has-action", !!action);
   // Met een sheet open staat de toast bovenaan, anders valt hij achter
   // het toetsenbord of over de knoppen van de sheet.
-  el.classList.toggle("top", sheetStack.length > 0);
+  el.classList.toggle("top", topToast());
   if (action) {
     el.querySelector(".toast-action").onclick = () => {
       el.classList.remove("show");
@@ -121,6 +127,9 @@ function layoutStack() {
     s.classList.remove("open");
   }
   document.body.classList.toggle("sheet-open", sheetStack.length > 0);
+  // Toast mee laten verhuizen: boven als er een sheet open is, anders onder.
+  const t = $("toast");
+  if (t) t.classList.toggle("top", topToast());
 }
 
 export function openSheet({ html = "", className = "", label = "", role = "dialog", url = null, onClose, replace = false } = {}) {
@@ -132,6 +141,9 @@ export function openSheet({ html = "", className = "", label = "", role = "dialo
   if (label) el.setAttribute("aria-label", label);
   el.innerHTML = `<div class="sheet-handle" aria-hidden="true"></div>${html}`;
   $("sheets").appendChild(el);
+  // Een oude toast zou midden over de nieuwe sheet zweven: wegdoen.
+  const t = $("toast");
+  if (t) { t.classList.remove("show"); clearTimeout(toastTimer); }
   const sheet = {
     el, url, onClose, closed: false,
     close: () => closeSheet(sheet),

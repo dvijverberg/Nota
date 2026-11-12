@@ -80,7 +80,7 @@ export function openTaskDetail(id) {
         <button type="button" class="prop-btn" data-a="${a}">
           <span class="prop-ic ${tone}" style="${style}">${icon(ic)}</span>
           <span class="prop-label">${label}</span>
-          <span class="prop-val ${empty ? "empty" : ""} ${tone}">${value}</span>
+          <span class="prop-val ${empty ? "is-empty" : ""} ${tone} ${value.includes('class="pill"') ? "pills" : ""}">${value}</span>
         </button>
         ${clear ? `<button type="button" class="icon-btn sm" data-clear="${a}" aria-label="${label} wissen">${icon("x", "icon-sm")}</button>` : ""}
       </div>`;
