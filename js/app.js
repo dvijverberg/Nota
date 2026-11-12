@@ -30,23 +30,45 @@ function getThemePref() {
   try { return localStorage.getItem("nota-theme") || "auto"; } catch { return "auto"; }
 }
 
-function applyTheme(pref) {
+const BAR_LIGHT = "#F5F6F7";
+const BAR_DARK = "#101215";
+
+// Kleur van de statusbalk. Op Auto twee tags met media-query, zodat de balk
+// meewisselt met de telefoon; bij een vaste keuze één tag met die kleur.
+function setBarColor(pref) {
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
+  const add = (color, media) => {
+    const m = document.createElement("meta");
+    m.name = "theme-color";
+    m.content = color;
+    if (media) m.media = media;
+    document.head.appendChild(m);
+  };
+  if (pref === "auto") {
+    add(BAR_LIGHT, "(prefers-color-scheme: light)");
+    add(BAR_DARK, "(prefers-color-scheme: dark)");
+  } else {
+    add(pref === "dark" ? BAR_DARK : BAR_LIGHT);
+  }
+}
+
+// Als app op het beginscherm leest iOS de statusbalkkleur alleen bij het
+// laden. Na een wissel van thema laden we daarom even opnieuw.
+const IOS_STANDALONE = navigator.standalone === true;
+
+function applyTheme(pref, { userChoice = false } = {}) {
+  const before = getThemePref();
   if (pref === "auto") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", pref);
   try { localStorage.setItem("nota-theme", pref); } catch {}
   document.querySelectorAll("[data-theme-value]").forEach((b) =>
     b.setAttribute("aria-pressed", String(b.dataset.themeValue === pref)));
-  // Statusbalk-kleur meeschakelen
-  const dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
-    m.setAttribute("content", dark ? "#101215" : "#F5F6F7");
-    m.removeAttribute("media");
-  });
+  setBarColor(pref);
+  if (userChoice && IOS_STANDALONE && before !== pref) {
+    setTimeout(() => location.reload(), 150);
+  }
 }
 
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (getThemePref() === "auto") applyTheme("auto");
-});
 applyTheme(getThemePref());
 
 // ---------- Routes ----------
@@ -256,7 +278,7 @@ appView.addEventListener("click", async (e) => {
   const v = current.view;
   if (v.onPlayClick && v.onPlayClick(e)) return;
   const tv = e.target.closest("[data-theme-value]");
-  if (tv) { applyTheme(tv.dataset.themeValue); return; }
+  if (tv) { applyTheme(tv.dataset.themeValue, { userChoice: true }); return; }
   const el = e.target.closest("[data-act]");
   if (!el || !appView.contains(el)) return;
   const act = el.dataset.act;

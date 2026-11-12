@@ -29,10 +29,11 @@
       if (pref !== "auto") {
         var color = pref === "dark" ? "#101215" : "#F5F6F7";
         var metas = document.querySelectorAll('meta[name="theme-color"]');
-        for (var i = 0; i < metas.length; i++) {
-          metas[i].setAttribute("content", color);
-          metas[i].removeAttribute("media");
-        }
+        for (var i = 0; i < metas.length; i++) metas[i].parentNode.removeChild(metas[i]);
+        var m = document.createElement("meta");
+        m.name = "theme-color";
+        m.content = color;
+        document.head.appendChild(m);
       }
     })();
   </script>
