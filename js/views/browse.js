@@ -10,6 +10,7 @@ import { editProject } from "./project.js";
 import { validateWithCount, filterTasks } from "./lists.js";
 import { validateFilter } from "../parse.js";
 import { exportNotes } from "./notes.js";
+import { pushStatus, cachedPushStatus, enablePush, disablePush, sendTestPush } from "../push.js";
 
 export const FILTER_PRESETS = [
   { name: "Prioriteit 1", query: "p1" },
@@ -150,6 +151,8 @@ export const settingsView = {
         <button type="button" data-theme-value="light" ${pressed("light")}>${icon("sun", "icon-sm")}Licht</button>
         <button type="button" data-theme-value="dark" ${pressed("dark")}>${icon("moon", "icon-sm")}Donker</button>
       </div>
+      <p class="sheet-label">Meldingen</p>
+      <div class="card list-card push-card" data-push>${pushGroup(cachedPushStatus())}</div>
       <p class="sheet-label">Exporteren</p>
       <div class="card list-card">
         <button type="button" class="list-row" data-act="export-txt"><span class="lead-ic">${icon("download")}</span><span class="grow">Notities als tekst</span><span class="hint">.txt</span></button>
@@ -163,7 +166,9 @@ export const settingsView = {
       </div>
       <p class="footnote">Nota · taken en spraaknotities</p>`;
   },
-  async onClick(act) {
+  after(el) { refreshPushGroup(el); },
+  async onClick(act, btn) {
+    if (act === "push-on" || act === "push-test" || act === "push-off") return pushAction(act, btn);
     if (act === "export-txt") exportNotes("txt", state.notes);
     if (act === "export-csv") exportNotes("csv", state.notes);
     if (act === "export-tasks") exportTasks();
@@ -171,6 +176,61 @@ export const settingsView = {
     if (act === "logout") actions.logout();
   },
 };
+
+// ---------- Meldingen ----------
+const PUSH_TEXT = {
+  on: "Aan op dit apparaat",
+  off: "Uit",
+  denied: "Geblokkeerd in je browserinstellingen",
+  unsupported: "Niet beschikbaar in deze browser",
+  "ios-install": "Uit",
+};
+
+function pushGroup(status) {
+  const row = (act, ic, label, cls = "") =>
+    `<button type="button" class="list-row ${cls}" data-act="${act}"><span class="lead-ic">${icon(ic)}</span><span class="grow">${label}</span></button>`;
+  const head = `<div class="list-row static"><span class="lead-ic">${icon("bell")}</span><span class="grow">Status</span>
+    <span class="hint push-state ${status === "on" ? "is-on" : ""}">${status ? PUSH_TEXT[status] : "…"}</span></div>`;
+  let body = "";
+  if (status === "on") body = row("push-test", "send", "Testmelding sturen") + row("push-off", "ban", "Uitzetten op dit apparaat");
+  else if (status === "off") body = row("push-on", "bell", "Meldingen aanzetten", "accent");
+  else if (status === "denied") body = `<p class="list-note">Sta meldingen voor deze site toe in de instellingen van je browser. Kom daarna terug en zet ze hier aan.</p>`;
+  else if (status === "ios-install") body = `<p class="list-note">Zet Nota eerst op je beginscherm (Deel → Zet op beginscherm) en open hem van daaruit. Alleen dan kan iOS meldingen sturen.</p>`;
+  else if (status === "unsupported") body = `<p class="list-note">Probeer een andere browser, of zet Nota op je beginscherm.</p>`;
+  return head + body;
+}
+
+let pushBusy = false;
+async function refreshPushGroup(root) {
+  const status = await pushStatus();
+  const box = (root || document).querySelector("[data-push]");
+  if (box && !pushBusy) box.innerHTML = pushGroup(status);
+}
+
+async function pushAction(act, btn) {
+  if (pushBusy) return;
+  pushBusy = true;
+  btn.disabled = true;
+  try {
+    if (act === "push-on") {
+      // enablePush() vraagt meteen toestemming, nog binnen de tik.
+      try { await enablePush(); toast("Meldingen staan aan"); }
+      catch (e) { toast("Aanzetten lukte niet: " + (e.message || e)); }
+    } else if (act === "push-test") {
+      try {
+        const n = await sendTestPush();
+        toast(n ? "Testmelding verstuurd" : "Geen apparaat gevonden om naar te sturen. Zet meldingen opnieuw aan.");
+      } catch (e) { toast("Testmelding mislukt: " + (e.message || e)); }
+    } else if (act === "push-off") {
+      try { await disablePush(); toast("Meldingen staan uit op dit apparaat"); }
+      catch (e) { toast("Uitzetten lukte niet: " + (e.message || e)); }
+    }
+  } finally {
+    pushBusy = false;
+    btn.disabled = false;
+    refreshPushGroup();
+  }
+}
 
 export async function changePassword({ recovery = false } = {}) {
   const pw = await promptSheet({

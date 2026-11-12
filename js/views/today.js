@@ -2,7 +2,7 @@
 
 import { todayStr, fromDateStr } from "../parse.js";
 import { escapeHtml, icon, toast, menuSheet, capitalize } from "../ui.js";
-import { openTasks, updateTask, updateTasks, projectById, activeProjects } from "../store.js";
+import { openTasks, rescheduleTask, rescheduleTasks, projectById, activeProjects } from "../store.js";
 import { taskList, sortByTimePrio } from "../tasks.js";
 import { intro, emptyState, groupHead, getPref, setPref, WD_SHORT, MONTH_SHORT } from "./common.js";
 
@@ -92,10 +92,10 @@ export async function rescheduleOverdue() {
   const overdue = openTasks().filter((t) => t.due_date && t.due_date < today);
   if (!overdue.length) { toast("Geen achterstallige taken."); return; }
   const prev = overdue.map((t) => [t.id, t.due_date]);
-  const ok = await updateTasks(overdue.map((t) => t.id), { due_date: today });
+  const ok = await rescheduleTasks(overdue.map((t) => t.id), { due_date: today });
   if (ok) {
     toast(`${overdue.length} ${overdue.length === 1 ? "taak" : "taken"} naar vandaag`, {
-      action: { label: "Ongedaan maken", fn: () => prev.forEach(([id, d]) => updateTask(id, { due_date: d })) },
+      action: { label: "Ongedaan maken", fn: () => prev.forEach(([id, d]) => rescheduleTask(id, { due_date: d })) },
     });
   }
 }

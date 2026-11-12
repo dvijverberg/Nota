@@ -1,8 +1,8 @@
 // Keuze-sheets: datum, prioriteit, labels, project/sectie, kleur.
 
-import { parseDateText, describeRecurrence, formatDateLong, todayStr, addDays, toDateStr, fromDateStr } from "./parse.js";
+import { parseDateText, describeRecurrence, formatDateLong, formatDue, todayStr, addDays, toDateStr, fromDateStr } from "./parse.js";
 import { openSheet, escapeHtml, icon, capitalize } from "./ui.js";
-import { state, activeProjects, sectionsOf, COLORS, createLabel, labelByName } from "./store.js";
+import { state, activeProjects, sectionsOf, COLORS, createLabel, labelByName, dueMoment } from "./store.js";
 import { PRIORITIES } from "./tasks.js";
 
 const WD_SHORT = ["zo", "ma", "di", "wo", "do", "vr", "za"];
@@ -374,6 +374,146 @@ export function editSheet({ title, name = "", color = COLORS[11].hex, favorite =
       answered = true;
       resolve({ name: n, color: cur, favorite: form.elements.favorite ? form.elements.favorite.checked : undefined, query: qIn ? qIn.value.trim() : undefined });
       sh.close();
+    });
+  });
+}
+
+// ---------- Herinnering ----------
+// Zonder reminder_at volgt de server de starttijd (als de taak een tijd
+// heeft). reminder_at is altijd een absoluut moment; "x min van tevoren"
+// rekenen we om vanaf de datum + tijd van de taak.
+const OFFSETS = [
+  { min: 10, label: "10 min van tevoren" },
+  { min: 30, label: "30 min van tevoren" },
+  { min: 60, label: "1 uur van tevoren" },
+];
+const MORNING = "08:00";
+const hm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+function reminderChoice(t) {
+  if (!t.reminder_at) return t.due_time ? "at" : "none";
+  const r = new Date(t.reminder_at);
+  if (isNaN(r)) return "custom";
+  if (t.due_date && t.due_time) {
+    const diff = Math.round((dueMoment(t.due_date, t.due_time.slice(0, 5)) - r) / 60000);
+    if (diff === 0) return "at";
+    const o = OFFSETS.find((x) => x.min === diff);
+    if (o) return "m" + o.min;
+  }
+  if (t.due_date && toDateStr(r) === t.due_date && hm(r) === MORNING) return "morning";
+  return "custom";
+}
+
+// { text, empty, past } voor de rij in de taakdetails.
+export function describeReminder(t, now = new Date()) {
+  const time = t.due_time ? t.due_time.slice(0, 5) : null;
+  if (!t.reminder_at) {
+    if (t.due_date && time) return { text: `Bij de starttijd (${time})`, empty: false, past: false };
+    return { text: "Geen", empty: true, past: false };
+  }
+  const r = new Date(t.reminder_at);
+  if (isNaN(r)) return { text: "Geen", empty: true, past: false };
+  const c = reminderChoice(t);
+  const o = OFFSETS.find((x) => "m" + x.min === c);
+  const text = o ? `${o.label} (${hm(r)})`
+    : c === "at" ? `Bij de starttijd (${hm(r)})`
+    : formatDue(toDateStr(r), hm(r), now).text;
+  return { text, empty: false, past: r < now };
+}
+
+// Resolves met { reminder_at } of null bij annuleren.
+export function reminderSheet(t) {
+  return new Promise((resolve) => {
+    let answered = false;
+    const time = t.due_time ? t.due_time.slice(0, 5) : null;
+    const base = t.due_date && time ? dueMoment(t.due_date, time) : null;
+    const cur = reminderChoice(t);
+    const opts = [];
+    if (base) {
+      opts.push({ id: "at", label: "Op het moment zelf", hint: time, value: null });
+      for (const o of OFFSETS) opts.push({ id: "m" + o.min, label: o.label, hint: hm(new Date(base - o.min * 60000)), value: new Date(base - o.min * 60000).toISOString() });
+    }
+    if (t.due_date) opts.push({ id: "morning", label: "Ochtend van de dag zelf", hint: MORNING, value: dueMoment(t.due_date, MORNING).toISOString() });
+    if (!base) opts.push({ id: "none", label: "Geen herinnering", value: null, icon: "ban" });
+
+    const r0 = t.reminder_at ? new Date(t.reminder_at) : null;
+    const draft = {
+      date: r0 && !isNaN(r0) ? toDateStr(r0) : t.due_date || todayStr(),
+      time: r0 && !isNaN(r0) ? hm(r0) : time || "09:00",
+    };
+
+    const sh = openSheet({
+      label: "Herinnering",
+      className: "tall-ish",
+      html: `
+        <div class="sheet-scroll">
+          <p class="sheet-title">Herinnering</p>
+          <p class="sheet-sub">${base ? "Taken met een tijd geven altijd een melding, standaard op de starttijd." : t.due_date ? "Deze taak heeft geen tijd. Kies wanneer je een melding wilt." : "Deze taak heeft geen datum. Kies een moment voor de melding."}</p>
+          <div class="sheet-group" data-opts>
+            ${opts.map((o) => `
+              <button type="button" class="sheet-item" data-r="${o.id}" aria-pressed="${o.id === cur}">
+                ${icon(o.icon || (o.id === "morning" ? "sun" : o.id === "at" ? "bell" : "clock"))}
+                <span class="grow">${o.label}</span>
+                ${o.hint ? `<span class="hint">${o.hint}</span>` : ""}
+                ${o.id === cur ? icon("check", "icon-sm tick") : ""}
+              </button>`).join("")}
+            <button type="button" class="sheet-item" data-r="custom" aria-pressed="${cur === "custom"}" aria-expanded="false">
+              ${icon("calendar")}<span class="grow">Ander moment…</span>
+              ${cur === "custom" ? icon("check", "icon-sm tick") : ""}
+            </button>
+          </div>
+          <div class="rem-custom" hidden>
+            <div class="sheet-group form-rows">
+              <label class="form-row">${icon("calendar")}<span class="grow">Datum</span>
+                <input type="date" class="time-input" data-f="date" value="${draft.date}" aria-label="Datum"></label>
+              <label class="form-row">${icon("clock")}<span class="grow">Tijd</span>
+                <input type="time" class="time-input" data-f="time" value="${draft.time}" aria-label="Tijd"></label>
+            </div>
+            <p class="date-preview rem-preview" aria-live="polite"></p>
+            <div class="sheet-actions">
+              <button type="button" class="btn-cancel" data-a="cancel">Annuleren</button>
+              <button type="button" class="btn-ok" data-a="ok">Opslaan</button>
+            </div>
+          </div>
+        </div>`,
+      onClose: () => { if (!answered) resolve(null); },
+    });
+    const finish = (val) => { answered = true; resolve(val); sh.close(); };
+    const custom = sh.q(".rem-custom");
+
+    function preview() {
+      const p = sh.q(".rem-preview");
+      const ok = sh.q('[data-a="ok"]');
+      if (!draft.date || !draft.time) { p.textContent = "Kies een datum en tijd."; p.className = "date-preview rem-preview"; ok.disabled = true; return; }
+      const at = dueMoment(draft.date, draft.time);
+      const past = at < new Date();
+      p.textContent = past ? "Dit moment is al voorbij." : `${formatDateLong(draft.date)} om ${draft.time}`;
+      p.className = "date-preview rem-preview " + (past ? "bad" : "ok");
+      ok.disabled = past;
+    }
+
+    sh.el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-r]");
+      if (b) {
+        if (b.dataset.r === "custom") {
+          custom.hidden = !custom.hidden;
+          b.setAttribute("aria-expanded", String(!custom.hidden));
+          if (!custom.hidden) { preview(); custom.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+          return;
+        }
+        const o = opts.find((x) => x.id === b.dataset.r);
+        if (o) finish({ reminder_at: o.value });
+        return;
+      }
+      const a = e.target.closest("[data-a]");
+      if (!a) return;
+      if (a.dataset.a === "cancel") { sh.close(); return; }
+      if (!draft.date || !draft.time || dueMoment(draft.date, draft.time) < new Date()) return;
+      finish({ reminder_at: dueMoment(draft.date, draft.time).toISOString() });
+    });
+    custom.addEventListener("input", (e) => {
+      const f = e.target.dataset.f;
+      if (f) { draft[f] = e.target.value || ""; preview(); }
     });
   });
 }

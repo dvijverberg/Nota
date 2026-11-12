@@ -5,7 +5,8 @@ import {
   $, escapeHtml, icon, toast, actions, haptic, initSheets, trackKeyboard, sheetStack,
   handleSheetPop, closeAllSheets, whenHistoryIdle,
 } from "./ui.js";
-import { sb, state, subscribe, loadAll, getTask, updateTask } from "./store.js";
+import { sb, state, subscribe, loadAll, getTask, rescheduleTask } from "./store.js";
+import { registerServiceWorker, resyncPush } from "./push.js";
 import { bindTaskInteractions } from "./tasks.js";
 import { openQuickAdd } from "./quickadd.js";
 import { openTaskDetail } from "./detail.js";
@@ -243,7 +244,7 @@ bindTaskInteractions(viewEl, {
     const t = getTask(id);
     if (!t) return;
     const r = await dateSheet({ due_date: t.due_date, due_time: t.due_time, recurrence: t.recurrence });
-    if (r) updateTask(id, { due_date: r.due_date, due_time: r.due_date ? r.due_time : null, recurrence: r.due_date ? r.recurrence : null });
+    if (r) rescheduleTask(id, { due_date: r.due_date, due_time: r.due_date ? r.due_time : null, recurrence: r.due_date ? r.recurrence : null });
   },
   // In notities en voltooid blijft een afgevinkte taak zichtbaar.
   keepVisible: (li) => !!li.closest(".note") || current?.key === "voltooid",
@@ -395,6 +396,7 @@ async function showApp(session) {
     route();
   }
   await refresh();
+  resyncPush();
   if (pendingTask) { const id = pendingTask; pendingTask = null; if (getTask(id)) openTaskDetail(id); }
   // Snelkoppeling "Taak toevoegen" op het beginscherm: ?add=1
   const u = new URL(location.href);
@@ -455,6 +457,14 @@ sb.auth.onAuthStateChange((event, session) => {
 initSheets();
 trackKeyboard();
 window.__notaBooted = true;
+
+// Service worker (meldingen + offline). Tik op een melding: de taak openen.
+registerServiceWorker({
+  onOpen: (url) => {
+    const hash = url.slice(url.indexOf("#"));
+    if (url.includes("#") && hash.startsWith("#/")) navigate(hash);
+  },
+});
 
 // Automatisch inloggen als er al een geldige sessie is
 sb.auth.getSession().then(({ data: { session } }) => {

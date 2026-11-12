@@ -810,6 +810,21 @@ button.list-row[data-act="archived"] .chev-r { display: block; }
 .dot-lg { width: 12px; height: 12px; border-radius: 99px; background: var(--c); display: inline-block; flex-shrink: 0; }
 
 .list-empty { margin: 0; padding: 16px; color: var(--muted); font-size: 15px; }
+
+/* Meldingen in Instellingen */
+.list-row.static:active { background: none; }
+.list-row.accent, .list-row.accent svg { color: var(--accent); font-weight: 500; }
+.list-row[disabled] { opacity: 0.55; }
+.push-state { text-align: right; }
+.push-state.is-on { color: var(--tone-today); font-weight: 500; }
+.list-note {
+  margin: 0;
+  padding: 12px 16px 14px 52px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
 .browse-intro { padding-bottom: 16px; }
 
 /* ---------- Zoeken & filter ---------- */
@@ -1955,7 +1970,9 @@ button.list-row[data-act="archived"] .chev-r { display: block; }
 body:not(.in-app) .toast { bottom: calc(var(--safe-bottom) + 24px); }
 .toast.top { bottom: auto; top: calc(var(--safe-top) + 12px); transform: translate(-50%, -20px); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
-.toast.has-action { pointer-events: auto; padding: 6px 6px 6px 18px; }
+.toast.has-action { padding: 6px 6px 6px 18px; }
+/* Alleen een zichtbare toast mag tikken opvangen. */
+.toast.has-action.show { pointer-events: auto; }
 
 .toast-action {
   border: none;

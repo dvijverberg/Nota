@@ -3,8 +3,8 @@
 
 import { toast, uuid } from "./ui.js";
 
-const SUPABASE_URL = "https://rqhrtiexwmgrlzgvrigm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_GQKT1FiA-eudNrKfOY7jcQ_NMrWQQ8Y";
+export const SUPABASE_URL = "https://rqhrtiexwmgrlzgvrigm.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_GQKT1FiA-eudNrKfOY7jcQ_NMrWQQ8Y";
 // "sb" i.p.v. "supabase": de library claimt die naam al als globale.
 export const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -230,7 +230,8 @@ export async function createTask(fields) {
   state.tasks.set(t.id, t);
   emit();
   const row = { ...t };
-  delete row.created_at; delete row.updated_at;
+  // Door de server beheerd: nooit zelf meesturen.
+  delete row.created_at; delete row.updated_at; delete row.reminder_sent_for;
   const { error } = await sb.from("tasks").insert(row);
   if (error) { state.tasks.delete(t.id); emit(); fail(error, "Toevoegen"); return null; }
   return t;
@@ -239,6 +240,7 @@ export async function createTask(fields) {
 export async function updateTask(id, patch, { quiet = false } = {}) {
   const t = state.tasks.get(id);
   if (!t) return false;
+  if ("reminder_sent_for" in patch) { patch = { ...patch }; delete patch.reminder_sent_for; }
   const prev = {};
   for (const k of Object.keys(patch)) prev[k] = t[k];
   Object.assign(t, patch);
@@ -272,6 +274,65 @@ export async function updateTasks(ids, patch) {
     fail(error);
     return false;
   }
+  return true;
+}
+
+// ---------- Datum verzetten (met herinnering mee) ----------
+// Lokaal tijdstip van een datum (+ tijd). Zonder tijd: middernacht.
+export function dueMoment(date, time = null) {
+  const [y, m, d] = date.split("-").map(Number);
+  const [h, mi] = (time || "00:00").split(":").map(Number);
+  return new Date(y, m - 1, d, h, mi);
+}
+
+// Herinnering evenveel verschuiven als de taak verschuift, zodat
+// "30 min van tevoren" ook na verzetten 30 min van tevoren blijft.
+// Met tijd voor en na: exact verschil. Anders: hele dagen, zelfde kloktijd.
+export function shiftedReminder(rem, from, to) {
+  if (!rem || !from.due_date || !to.due_date) return rem;
+  const r = new Date(rem);
+  if (isNaN(r)) return rem;
+  const ft = from.due_time ? from.due_time.slice(0, 5) : null;
+  const tt = to.due_time ? to.due_time.slice(0, 5) : null;
+  if (ft && tt) {
+    const delta = dueMoment(to.due_date, tt) - dueMoment(from.due_date, ft);
+    return delta ? new Date(r.getTime() + delta).toISOString() : rem;
+  }
+  const days = Math.round((dueMoment(to.due_date) - dueMoment(from.due_date)) / 864e5);
+  if (!days) return rem;
+  r.setDate(r.getDate() + days);
+  return r.toISOString();
+}
+
+// Patch voor een nieuwe datum/tijd/herhaling, inclusief verschoven herinnering.
+export function reschedulePatch(t, due) {
+  const patch = { ...due };
+  const to = {
+    due_date: "due_date" in due ? due.due_date : t.due_date,
+    due_time: "due_time" in due ? due.due_time : t.due_time,
+  };
+  const rem = shiftedReminder(t.reminder_at, t, to);
+  if (rem !== t.reminder_at) patch.reminder_at = rem;
+  return patch;
+}
+
+// Eén plek voor elke wijziging van due_date/due_time.
+export function rescheduleTask(id, due, opts) {
+  const t = state.tasks.get(id);
+  if (!t) return Promise.resolve(false);
+  return updateTask(id, reschedulePatch(t, due), opts);
+}
+
+// Meerdere taken naar dezelfde datum. Taken met een herinnering krijgen elk
+// hun eigen verschoven tijd; de rest gaat in één keer.
+export async function rescheduleTasks(ids, due) {
+  const withRem = ids.filter((id) => state.tasks.get(id)?.reminder_at);
+  const plain = ids.filter((id) => !withRem.includes(id));
+  const results = await Promise.all([
+    plain.length ? updateTasks(plain, due) : true,
+    ...withRem.map((id) => rescheduleTask(id, due, { quiet: true })),
+  ]);
+  if (results.some((ok) => !ok)) { if (results.slice(1).some((ok) => !ok)) fail("tasks"); return false; }
   return true;
 }
 

@@ -5,9 +5,9 @@ import { formatDue, formatDateLong, todayStr } from "./parse.js";
 import { openSheet, escapeHtml, icon, toast, confirmSheet, menuSheet, actions, CHECK_SVG } from "./ui.js";
 import {
   state, getTask, projectById, sectionById, childrenOf, updateTask, updateTasks, deleteTask,
-  duplicateTask, subscribe, noteById, allTasks,
+  duplicateTask, subscribe, noteById, allTasks, rescheduleTask,
 } from "./store.js";
-import { dateSheet, prioritySheet, labelsSheet, projectSheet, safeDescribe } from "./pickers.js";
+import { dateSheet, prioritySheet, labelsSheet, projectSheet, reminderSheet, describeReminder, safeDescribe } from "./pickers.js";
 import { PRIORITIES, taskList, bindTaskInteractions, toggleTask, shortDate, dueInfo } from "./tasks.js";
 
 const DURATIONS = [0, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
@@ -111,7 +111,7 @@ export function openTaskDetail(id) {
     const due = dueInfo(t);
     const prio = PRIORITIES.find((x) => x.p === (t.priority || 4));
     const durLabel = (m) => !m ? "Geen" : m < 60 ? `${m} min` : `${Math.floor(m / 60)} u${m % 60 ? " " + (m % 60) + " min" : ""}`;
-    const reminderVal = t.reminder_at ? toLocalInput(t.reminder_at) : "";
+    const rem = describeReminder(t);
 
     // Niet opnieuw opbouwen terwijl je in een veld van de eigenschappen zit.
     const props = sh.q(".detail-props");
@@ -123,13 +123,7 @@ export function openTaskDetail(id) {
         ${propRow("deadline", "target", "Deadline", t.deadline ? escapeHtml(formatDateLong(t.deadline)) : "Geen", { empty: !t.deadline, clear: !!t.deadline, tone: t.deadline && t.deadline < todayStr() ? "tone-overdue" : "" })}
         ${propRow("priority", (t.priority || 4) < 4 ? "flag-fill" : "flag", "Prioriteit", prio.name, { style: `color:${prio.color}`, empty: (t.priority || 4) === 4 })}
         ${propRow("labels", "tag", "Labels", t.labels.length ? t.labels.map((l) => `<span class="pill">${escapeHtml(l)}</span>`).join("") : "Geen", { empty: !t.labels.length })}
-        <div class="prop">
-          <label class="prop-btn">
-            <span class="prop-ic">${icon("bell")}</span><span class="prop-label">Herinnering</span>
-            <input type="datetime-local" class="prop-input" data-f="reminder" value="${reminderVal}" aria-label="Herinnering">
-          </label>
-          ${t.reminder_at ? `<button type="button" class="icon-btn sm" data-clear="reminder" aria-label="Herinnering wissen">${icon("x", "icon-sm")}</button>` : ""}
-        </div>
+        ${propRow("reminder", "bell", "Herinnering", escapeHtml(rem.text), { empty: rem.empty, clear: !!t.reminder_at, tone: rem.past && !t.completed ? "tone-overdue" : "" })}
         <div class="prop">
           <label class="prop-btn">
             <span class="prop-ic">${icon("hourglass")}</span><span class="prop-label">Duur</span>
@@ -163,10 +157,7 @@ export function openTaskDetail(id) {
 
   sh.el.addEventListener("change", (e) => {
     const f = e.target.dataset.f;
-    if (f === "reminder") {
-      const v = e.target.value;
-      updateTask(id, { reminder_at: v ? new Date(v).toISOString() : null });
-    } else if (f === "duration") {
+    if (f === "duration") {
       const m = Number(e.target.value);
       updateTask(id, { duration_min: m || null });
     }
@@ -178,7 +169,9 @@ export function openTaskDetail(id) {
     const clr = e.target.closest("[data-clear]");
     if (clr) {
       const k = clr.dataset.clear;
-      if (k === "due") updateTask(id, { due_date: null, due_time: null, recurrence: null });
+      // Focus weg, anders bouwt render() de eigenschappen niet opnieuw op.
+      clr.blur();
+      if (k === "due") rescheduleTask(id, { due_date: null, due_time: null, recurrence: null });
       if (k === "deadline") updateTask(id, { deadline: null });
       if (k === "reminder") updateTask(id, { reminder_at: null });
       return;
@@ -204,7 +197,12 @@ export function openTaskDetail(id) {
       }
       case "due": {
         const r = await dateSheet({ due_date: t.due_date, due_time: t.due_time, recurrence: t.recurrence });
-        if (r) updateTask(id, { due_date: r.due_date, due_time: r.due_date ? r.due_time : null, recurrence: r.due_date ? r.recurrence : null });
+        if (r) rescheduleTask(id, { due_date: r.due_date, due_time: r.due_date ? r.due_time : null, recurrence: r.due_date ? r.recurrence : null });
+        break;
+      }
+      case "reminder": {
+        const r = await reminderSheet(t);
+        if (r) updateTask(id, { reminder_at: r.reminder_at });
         break;
       }
       case "deadline": {
@@ -253,11 +251,4 @@ export function openTaskDetail(id) {
   const unsub = subscribe(render);
   render();
   return sh;
-}
-
-function toLocalInput(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }

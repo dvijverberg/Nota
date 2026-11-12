@@ -4,7 +4,7 @@ import { formatDue, nextOccurrence, todayStr } from "./parse.js";
 import { escapeHtml, highlight, icon, CHECK_SVG, haptic, toast, actions, reducedMotion } from "./ui.js";
 import {
   state, getTask, projectById, sectionById, childrenOf, updateTask, updateTasks,
-  subtaskIds, noteById, byOrder,
+  subtaskIds, noteById, byOrder, rescheduleTask,
 } from "./store.js";
 
 export const PRIORITIES = [
@@ -34,6 +34,7 @@ export function taskRow(t, opts = {}) {
     meta.push(`<span class="meta-due">${icon("repeat", "icon-xs")}</span>`);
   }
   if (t.deadline) meta.push(`<span class="meta-deadline">${icon("target", "icon-xs")}${escapeHtml(shortDate(t.deadline))}</span>`);
+  if (t.reminder_at && !t.completed) meta.push(`<span class="meta-icon meta-bell" title="Herinnering">${icon("bell", "icon-xs")}</span>`);
   if (kids.length && !opts.hideSubCount) meta.push(`<span class="meta-sub">${icon("subtask", "icon-xs")}${kidsDone}/${kids.length}</span>`);
   if (t.description) meta.push(`<span class="meta-icon" title="Beschrijving">${icon("text", "icon-xs")}</span>`);
   if (t.note_id && !opts.noteContext) meta.push(`<span class="meta-icon" title="Uit spraaknotitie">${icon("mic", "icon-xs")}</span>`);
@@ -131,10 +132,10 @@ export function completeTask(id, { rowEl, keepVisible = false } = {}) {
       if (next) {
         const prevDate = t.due_date;
         if (rowEl) rowEl.classList.remove("completing", "done");
-        const ok = await updateTask(id, { due_date: next });
+        const ok = await rescheduleTask(id, { due_date: next });
         if (ok) {
           const d = formatDue(next, t.due_time || null, new Date());
-          toast(`Volgende keer: ${d.text}`, { action: { label: "Ongedaan maken", fn: () => updateTask(id, { due_date: prevDate }) } });
+          toast(`Volgende keer: ${d.text}`, { action: { label: "Ongedaan maken", fn: () => rescheduleTask(id, { due_date: prevDate }) } });
         }
         return;
       }
