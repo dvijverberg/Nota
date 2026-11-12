@@ -23,6 +23,17 @@
       var pref = "auto";
       try { pref = localStorage.getItem("nota-theme") || "auto"; } catch (e) {}
       if (pref !== "auto") document.documentElement.setAttribute("data-theme", pref);
+      // iOS kiest de kleur van de statusbalk bij het laden. Kies je in de
+      // app een ander thema dan je telefoon, dan moet de kleur hier al
+      // goed staan, anders blijft de balk wit (of zwart) tot je herstart.
+      if (pref !== "auto") {
+        var color = pref === "dark" ? "#101215" : "#F5F6F7";
+        var metas = document.querySelectorAll('meta[name="theme-color"]');
+        for (var i = 0; i < metas.length; i++) {
+          metas[i].setAttribute("content", color);
+          metas[i].removeAttribute("media");
+        }
+      }
     })();
   </script>
   <link rel="stylesheet" href="css/app.css">
