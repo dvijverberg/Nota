@@ -1,0 +1,197 @@
+// Bladeren (projecten, labels, filters, voltooid) en Instellingen.
+
+import { escapeHtml, icon, toast, promptSheet, downloadBlob, csvField, actions, menuSheet } from "../ui.js";
+import {
+  state, sb, activeProjects, openTasks, createLabel, createFilter, byOrder, updateProject,
+  projectById, sectionById,
+} from "../store.js";
+import { editSheet } from "../pickers.js";
+import { editProject } from "./project.js";
+import { validateWithCount, filterTasks } from "./lists.js";
+import { validateFilter } from "../parse.js";
+import { exportNotes } from "./notes.js";
+
+export const FILTER_PRESETS = [
+  { name: "Prioriteit 1", query: "p1" },
+  { name: "Achterstallig", query: "achterstallig" },
+  { name: "Deze week", query: "7 dagen" },
+  { name: "Zonder datum", query: "geen datum" },
+];
+
+function row({ href, act, id, lead, label, count = "", trail = "" }) {
+  const attrs = href ? `href="${href}"` : `type="button" data-act="${act}" ${id ? `data-id="${escapeHtml(id)}"` : ""}`;
+  const tag = href ? "a" : "button";
+  return `<${tag} class="list-row" ${attrs}>${lead}<span class="grow">${label}</span>${trail}${count !== "" ? `<span class="count">${count}</span>` : ""}${icon("chevron-right", "icon-sm chev-r")}</${tag}>`;
+}
+
+export const browseView = {
+  tab: "bladeren",
+  topbar: () => ({
+    title: "Bladeren",
+    logo: true,
+    actions: [{ act: "search", icon: "search", label: "Zoeken" }, { act: "menu", icon: "more", label: "Meer" }],
+  }),
+  render() {
+    const open = openTasks();
+    const inboxN = open.filter((t) => !t.project_id).length;
+    const projects = activeProjects();
+    const archived = state.projects.filter((p) => p.archived);
+    const labels = [...state.labels].sort(byOrder);
+    const usedLabels = new Set(open.flatMap((t) => t.labels));
+    const looseLabels = [...usedLabels].filter((n) => !labels.some((l) => l.name.toLowerCase() === n.toLowerCase()));
+    const filters = [...state.filters].sort(byOrder);
+    const doneN = [...state.tasks.values()].filter((t) => t.completed).length;
+
+    return `
+      <section class="intro browse-intro"><h1>Bladeren</h1></section>
+      <div class="card list-card">
+        ${row({ href: "#/inbox", lead: `<span class="lead-ic" style="color:var(--accent)">${icon("inbox")}</span>`, label: "Inbox", count: inboxN || "" })}
+        ${row({ href: "#/voltooid", lead: `<span class="lead-ic" style="color:var(--tone-today)">${icon("check-circle")}</span>`, label: "Voltooid", count: doneN || "" })}
+      </div>
+
+      <section class="group">
+        <div class="group-head"><h2>Projecten</h2><span class="grow"></span>
+          <button type="button" class="icon-btn sm" data-act="new-project" aria-label="Nieuw project">${icon("plus")}</button></div>
+        <div class="card list-card">
+          ${projects.length ? projects.map((p) => row({
+            href: "#/project/" + p.id,
+            lead: `<span class="lead-ic"><span class="dot-lg" style="--c:${escapeHtml(p.color)}"></span></span>`,
+            label: escapeHtml(p.name),
+            trail: p.favorite ? icon("star-fill", "icon-xs fav") : "",
+            count: open.filter((t) => t.project_id === p.id).length || "",
+          })).join("") : `<p class="list-empty">Nog geen projecten.</p>`}
+          ${archived.length ? `<button type="button" class="list-row muted" data-act="archived"><span class="lead-ic">${icon("archive")}</span><span class="grow">Gearchiveerd</span><span class="count">${archived.length}</span>${icon("chevron-right", "icon-sm chev-r")}</button>` : ""}
+        </div>
+      </section>
+
+      <section class="group">
+        <div class="group-head"><h2>Labels</h2><span class="grow"></span>
+          <button type="button" class="icon-btn sm" data-act="new-label" aria-label="Nieuw label">${icon("plus")}</button></div>
+        <div class="card list-card">
+          ${labels.length || looseLabels.length ? [...labels.map((l) => ({ name: l.name, color: l.color })), ...looseLabels.map((n) => ({ name: n, color: null }))].map((l) => row({
+            href: "#/label/" + encodeURIComponent(l.name),
+            lead: `<span class="lead-ic" style="color:${escapeHtml(l.color || "var(--muted)")}">${icon("tag")}</span>`,
+            label: escapeHtml(l.name),
+            count: open.filter((t) => t.labels.some((x) => x.toLowerCase() === l.name.toLowerCase())).length || "",
+          })).join("") : `<p class="list-empty">Nog geen labels. Typ @label in een taak.</p>`}
+        </div>
+      </section>
+
+      <section class="group">
+        <div class="group-head"><h2>Filters</h2><span class="grow"></span>
+          <button type="button" class="icon-btn sm" data-act="new-filter" aria-label="Nieuwe filter">${icon("plus")}</button></div>
+        <div class="card list-card">
+          ${filters.length ? filters.map((f) => row({
+            href: "#/filter/" + f.id,
+            lead: `<span class="lead-ic" style="color:${escapeHtml(f.color || "var(--muted)")}">${icon("filter")}</span>`,
+            label: escapeHtml(f.name),
+            count: validateFilter(f.query).ok ? (filterTasks(f.query).length || "") : "!",
+          })).join("") : `<p class="list-empty">Nog geen filters.</p>`}
+        </div>
+        ${filters.length < 2 ? `<div class="chips presets">${FILTER_PRESETS.filter((p) => !filters.some((f) => f.query === p.query)).map((p) => `<button type="button" class="chip" data-act="preset" data-q="${escapeHtml(p.query)}" data-n="${escapeHtml(p.name)}">${icon("plus", "icon-xs")}${escapeHtml(p.name)}</button>`).join("")}</div>` : ""}
+      </section>
+
+      <div class="card list-card">
+        ${row({ href: "#/instellingen", lead: `<span class="lead-ic">${icon("settings")}</span>`, label: "Instellingen" })}
+      </div>`;
+  },
+
+  async onClick(act, el) {
+    if (act === "new-project") {
+      const p = await editProject(null);
+      if (p) actions.navigate("#/project/" + p.id);
+    }
+    if (act === "new-label") {
+      const r = await editSheet({ title: "Nieuw label", ok: "Toevoegen" });
+      if (r) { await createLabel(r.name.replace(/^@/, ""), r.color); }
+    }
+    if (act === "new-filter") return newFilter();
+    if (act === "preset") {
+      const f = await createFilter({ name: el.dataset.n, query: el.dataset.q, color: "#808080" });
+      if (f) toast(`Filter “${f.name}” toegevoegd`);
+    }
+    if (act === "archived") {
+      const arch = state.projects.filter((p) => p.archived);
+      const r = await menuSheet({ title: "Gearchiveerde projecten", sub: "Tik om terug te zetten.", groups: [{ items: arch.map((p) => ({ id: p.id, label: p.name, dot: p.color, icon: null })) }] });
+      if (r) { await updateProject(r, { archived: false }); toast("Project teruggezet"); }
+    }
+    if (act === "menu") {
+      const r = await menuSheet({ groups: [{ items: [
+        { id: "refresh", label: "Vernieuwen", icon: "refresh" },
+        { id: "settings", label: "Instellingen", icon: "settings" },
+      ] }] });
+      if (r === "refresh") return "refresh";
+      if (r === "settings") actions.navigate("#/instellingen");
+    }
+  },
+};
+
+export async function newFilter() {
+  const r = await editSheet({ title: "Nieuwe filter", query: "", validate: validateWithCount, ok: "Toevoegen", presets: FILTER_PRESETS });
+  if (!r) return;
+  const f = await createFilter({ name: r.name, query: r.query, color: r.color });
+  if (f) actions.navigate("#/filter/" + f.id);
+}
+
+// ---------- Instellingen ----------
+export const settingsView = {
+  tab: "bladeren",
+  topbar: () => ({ title: "Instellingen", back: true, actions: [] }),
+  render() {
+    const email = state.user?.email || "";
+    let theme = "auto";
+    try { theme = localStorage.getItem("nota-theme") || "auto"; } catch {}
+    const pressed = (v) => `aria-pressed="${theme === v}"`;
+    return `
+      <section class="intro"><h1>Instellingen</h1>${email ? `<p>${escapeHtml(email)}</p>` : ""}</section>
+      <p class="sheet-label">Weergave</p>
+      <div class="segmented" data-theme-switch>
+        <button type="button" data-theme-value="auto" ${pressed("auto")}>${icon("auto", "icon-sm")}Auto</button>
+        <button type="button" data-theme-value="light" ${pressed("light")}>${icon("sun", "icon-sm")}Licht</button>
+        <button type="button" data-theme-value="dark" ${pressed("dark")}>${icon("moon", "icon-sm")}Donker</button>
+      </div>
+      <p class="sheet-label">Exporteren</p>
+      <div class="card list-card">
+        <button type="button" class="list-row" data-act="export-txt"><span class="lead-ic">${icon("download")}</span><span class="grow">Notities als tekst</span><span class="hint">.txt</span></button>
+        <button type="button" class="list-row" data-act="export-csv"><span class="lead-ic">${icon("download")}</span><span class="grow">Notities als spreadsheet</span><span class="hint">.csv</span></button>
+        <button type="button" class="list-row" data-act="export-tasks"><span class="lead-ic">${icon("download")}</span><span class="grow">Taken als spreadsheet</span><span class="hint">.csv</span></button>
+      </div>
+      <p class="sheet-label">Account</p>
+      <div class="card list-card">
+        <button type="button" class="list-row" data-act="password"><span class="lead-ic">${icon("key")}</span><span class="grow">Wachtwoord wijzigen</span></button>
+        <button type="button" class="list-row danger" data-act="logout"><span class="lead-ic">${icon("logout")}</span><span class="grow">Uitloggen</span></button>
+      </div>
+      <p class="footnote">Nota · taken en spraaknotities</p>`;
+  },
+  async onClick(act) {
+    if (act === "export-txt") exportNotes("txt", state.notes);
+    if (act === "export-csv") exportNotes("csv", state.notes);
+    if (act === "export-tasks") exportTasks();
+    if (act === "password") changePassword();
+    if (act === "logout") actions.logout();
+  },
+};
+
+export async function changePassword({ recovery = false } = {}) {
+  const pw = await promptSheet({
+    title: recovery ? "Nieuw wachtwoord" : "Wachtwoord wijzigen",
+    sub: recovery ? "Kies een nieuw wachtwoord voor je account." : "Minimaal 8 tekens.",
+    type: "password", placeholder: "Nieuw wachtwoord", ok: "Opslaan", autocomplete: "new-password",
+  });
+  if (!pw) return;
+  if (pw.length < 8) { toast("Kies minimaal 8 tekens."); return changePassword({ recovery }); }
+  const { error } = await sb.auth.updateUser({ password: pw });
+  if (error) toast("Wijzigen mislukt: " + error.message);
+  else toast("Wachtwoord gewijzigd");
+}
+
+function exportTasks() {
+  const rows = [["titel", "project", "sectie", "prioriteit", "datum", "tijd", "herhaling", "deadline", "labels", "voltooid", "beschrijving"]];
+  const tasks = [...state.tasks.values()].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  for (const t of tasks) {
+    rows.push([t.title, projectById(t.project_id)?.name || "Inbox", sectionById(t.section_id)?.name || "", "p" + (t.priority || 4),
+      t.due_date || "", t.due_time || "", t.recurrence?.text || "", t.deadline || "", (t.labels || []).join(", "),
+      t.completed ? (t.completed_at || "ja") : "", t.description || ""]);
+  }
+  downloadBlob("﻿" + rows.map((r) => r.map(csvField).join(",")).join("\r\n"), "nota-taken.csv", "text/csv");
+}
