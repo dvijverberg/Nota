@@ -1,10 +1,11 @@
 // Bladeren (projecten, labels, filters, voltooid) en Instellingen.
 
-import { escapeHtml, icon, toast, promptSheet, downloadBlob, csvField, actions, menuSheet } from "../ui.js";
+import { escapeHtml, icon, toast, promptSheet, downloadBlob, csvField, actions, menuSheet, confirmSheet } from "../ui.js";
 import {
   state, sb, activeProjects, openTasks, createLabel, createFilter, byOrder, updateProject,
-  projectById, sectionById,
+  projectById, sectionById, settings, saveSettings, SUPABASE_URL, pcState, agoText,
 } from "../store.js";
+import { watchPcStatus } from "../record.js";
 import { editSheet } from "../pickers.js";
 import { editProject } from "./project.js";
 import { validateWithCount, filterTasks } from "./lists.js";
@@ -153,6 +154,11 @@ export const settingsView = {
       </div>
       <p class="sheet-label">Meldingen</p>
       <div class="card list-card push-card" data-push>${pushGroup(cachedPushStatus())}</div>
+      <div class="card list-card digest-card" data-digest>${digestGroup()}</div>
+      <p class="sheet-label">Agenda</p>
+      <div class="card list-card" data-agenda>${agendaGroup()}</div>
+      <p class="sheet-label">Computer</p>
+      <div class="card list-card" data-pc-row>${computerRow()}</div>
       <p class="sheet-label">Exporteren</p>
       <div class="card list-card">
         <button type="button" class="list-row" data-act="export-txt"><span class="lead-ic">${icon("download")}</span><span class="grow">Notities als tekst</span><span class="hint">.txt</span></button>
@@ -166,9 +172,46 @@ export const settingsView = {
       </div>
       <p class="footnote">Nota · taken en spraaknotities</p>`;
   },
-  after(el) { refreshPushGroup(el); },
+  after(el) { refreshPushGroup(el); watchPcStatus(true); },
+  // Store-wijzigingen: alleen de blokken bijwerken, zodat een open
+  // tijdkiezer niet verdwijnt.
+  update(root) {
+    if (!root.querySelector("[data-digest]")) return false;
+    updateDigest(root);
+    const ag = root.querySelector("[data-agenda]");
+    if (ag) ag.innerHTML = agendaGroup();
+    const pc = root.querySelector("[data-pc-row]");
+    if (pc) pc.innerHTML = computerRow();
+    return true;
+  },
+  leave() { watchPcStatus(false); },
+  onChange(e) {
+    const t = e.target;
+    if (t.id === "digest-on") {
+      const on = t.checked;
+      saveSettings({ digest_enabled: on }).then((ok) => {
+        if (ok) toast(on ? `Ochtendoverzicht staat aan, om ${settings().digest_time}` : "Ochtendoverzicht staat uit");
+      });
+    }
+    if (t.id === "digest-time") {
+      const v = (t.value || "").slice(0, 5);
+      if (!/^\d{2}:\d{2}$/.test(v)) { t.value = settings().digest_time; return; }
+      if (v === settings().digest_time) return;
+      saveSettings({ digest_time: v }).then((ok) => { if (ok) toast(`Ochtendoverzicht om ${v}`); });
+    }
+  },
   async onClick(act, btn) {
     if (act === "push-on" || act === "push-test" || act === "push-off") return pushAction(act, btn);
+    if (act === "digest-time-open") {
+      // Het echte veld ligt onzichtbaar over de tijd heen; op een computer
+      // opent een tik daarop niet vanzelf de kiezer.
+      // Op een telefoon opent de tik op het veld zelf de kiezer al.
+      if (matchMedia("(pointer: coarse)").matches) return;
+      const input = btn.querySelector("input");
+      try { input.showPicker(); } catch { input.focus(); }
+      return;
+    }
+    if (act.startsWith("cal-")) return agendaAction(act);
     if (act === "export-txt") exportNotes("txt", state.notes);
     if (act === "export-csv") exportNotes("csv", state.notes);
     if (act === "export-tasks") exportTasks();
@@ -205,6 +248,7 @@ async function refreshPushGroup(root) {
   const status = await pushStatus();
   const box = (root || document).querySelector("[data-push]");
   if (box && !pushBusy) box.innerHTML = pushGroup(status);
+  updateDigest(root);
 }
 
 async function pushAction(act, btn) {
@@ -230,6 +274,113 @@ async function pushAction(act, btn) {
     btn.disabled = false;
     refreshPushGroup();
   }
+}
+
+// ---------- Ochtendoverzicht ----------
+function digestGroup() {
+  const s = settings();
+  const push = cachedPushStatus();
+  return `
+    <label class="list-row static two-line" for="digest-on">
+      <span class="lead-ic">${icon("sun")}</span>
+      <span class="grow"><span>Ochtendoverzicht</span><small>Elke ochtend een melding met je taken voor vandaag</small></span>
+      <input type="checkbox" class="switch" id="digest-on" ${s.digest_enabled ? "checked" : ""}>
+    </label>
+    <div class="list-row static ${s.digest_enabled ? "" : "muted"}" data-digest-time>
+      <span class="lead-ic">${icon("clock")}</span>
+      <label class="grow" for="digest-time">Tijd</label>
+      <span class="time-pill" data-act="digest-time-open">
+        <span class="time-text">${escapeHtml(s.digest_time)}</span>
+        <input type="time" id="digest-time" step="300" value="${escapeHtml(s.digest_time)}" aria-label="Tijd van het ochtendoverzicht">
+      </span>
+    </div>
+    ${push && push !== "on" ? `<p class="list-note" data-digest-hint>Zet eerst meldingen aan. Je krijgt het overzicht op elk apparaat waar meldingen aanstaan.</p>` : ""}`;
+}
+
+function updateDigest(root) {
+  const box = (root || document).querySelector("[data-digest]");
+  if (!box) return;
+  if (!box.contains(document.activeElement)) { box.innerHTML = digestGroup(); return; }
+  // Veld heeft focus: niet opnieuw opbouwen, alleen waarden bijwerken.
+  const s = settings();
+  box.querySelector("#digest-on").checked = s.digest_enabled;
+  box.querySelector(".time-text").textContent = s.digest_time;
+  box.querySelector("[data-digest-time]").classList.toggle("muted", !s.digest_enabled);
+}
+
+// ---------- Agenda ----------
+export function agendaUrl(token) {
+  return `${SUPABASE_URL}/functions/v1/agenda?token=${encodeURIComponent(token)}`;
+}
+
+export function webcalUrl(token) {
+  return "webcal://" + agendaUrl(token).replace(/^https?:\/\//, "");
+}
+
+function newToken() {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+function agendaGroup() {
+  const token = settings().calendar_token;
+  const btn = (act, ic, label, cls = "") =>
+    `<button type="button" class="list-row ${cls}" data-act="${act}"><span class="lead-ic">${icon(ic)}</span><span class="grow">${label}</span></button>`;
+  const head = `<div class="list-row static"><span class="lead-ic">${icon("calendar")}</span><span class="grow">Agenda-link</span>
+    <span class="hint push-state ${token ? "is-on" : ""}">${token ? "Aan" : "Uit"}</span></div>`;
+  if (!token) {
+    return head + `<p class="list-note">Zie je taken met een datum in Apple Agenda of Google Agenda.</p>` +
+      btn("cal-create", "plus", "Agenda-link maken", "accent");
+  }
+  return head + `
+    <p class="list-note">Je taken met een datum verschijnen in je agenda. Wijzigingen komen er binnen een paar uur in.</p>
+    <a class="list-row accent" href="${escapeHtml(webcalUrl(token))}" data-cal-apple><span class="lead-ic">${icon("plus")}</span><span class="grow">Toevoegen aan Apple Agenda</span></a>
+    ${btn("cal-copy", "copy", "Link kopiëren")}
+    <p class="list-note">Google Agenda: ga op een computer naar Instellingen &gt; Agenda toevoegen &gt; Via URL en plak de link.</p>
+    ${btn("cal-new", "refresh", "Nieuwe link maken")}
+    ${btn("cal-off", "ban", "Agenda-link uitzetten", "danger")}`;
+}
+
+async function agendaAction(act) {
+  const token = settings().calendar_token;
+  if (act === "cal-create") {
+    if (await saveSettings({ calendar_token: newToken() })) toast("Agenda-link gemaakt");
+  }
+  if (act === "cal-copy" && token) {
+    try { await navigator.clipboard.writeText(agendaUrl(token)); toast("Link gekopieerd"); }
+    catch { toast("Kopiëren lukte niet."); }
+  }
+  if (act === "cal-new") {
+    const ok = await confirmSheet({ title: "Nieuwe link maken?", text: "De oude link werkt daarna niet meer.", ok: "Nieuwe link maken" });
+    if (ok && await saveSettings({ calendar_token: newToken() })) toast("Nieuwe link gemaakt. Voeg hem opnieuw toe aan je agenda.");
+  }
+  if (act === "cal-off") {
+    const ok = await confirmSheet({ title: "Agenda-link uitzetten?", text: "Je agenda laat je taken daarna niet meer zien.", ok: "Uitzetten" });
+    if (ok && await saveSettings({ calendar_token: null })) toast("Agenda-link staat uit");
+  }
+}
+
+// ---------- Computer ----------
+function computerRow() {
+  const st = pcState();
+  const info = state.pcStatus?.info || {};
+  let sub = "…", hint = "", cls = "";
+  if (st === "online") {
+    const q = Number(info.queue) || 0;
+    sub = q ? `Verwerkt je opnames · ${q} in de wachtrij` : "Verwerkt je opnames";
+    hint = "Aan"; cls = "is-on";
+  } else if (st === "offline") {
+    const ago = agoText(state.pcStatus.last_seen);
+    sub = ago ? "Laatst gezien " + ago : "Staat uit";
+    hint = "Uit";
+  } else if (st === "missing") {
+    sub = "Nog niet verbonden"; hint = "Uit";
+  }
+  return `<div class="list-row static two-line" data-pc-state="${st || "unknown"}">
+    <span class="lead-ic">${icon("monitor")}</span>
+    <span class="grow"><span>Computer</span><small>${escapeHtml(sub)}</small></span>
+    ${hint ? `<span class="hint push-state ${cls}"><span class="pc-dot ${st === "online" ? "is-online" : ""}" aria-hidden="true"></span>${hint}</span>` : ""}
+  </div>`;
 }
 
 export async function changePassword({ recovery = false } = {}) {

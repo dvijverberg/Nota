@@ -11,7 +11,7 @@ import { bindTaskInteractions } from "./tasks.js";
 import { openQuickAdd } from "./quickadd.js";
 import { openTaskDetail } from "./detail.js";
 import { dateSheet } from "./pickers.js";
-import { openRecorder, loadRecordings, startPolling } from "./record.js";
+import { openRecorder, loadRecordings, startPolling, watchPcStatus } from "./record.js";
 import todayView from "./views/today.js";
 import upcomingView from "./views/upcoming.js";
 import projectView from "./views/project.js";
@@ -233,6 +233,7 @@ actions.openNote = async (id) => {
 actions.logout = async () => {
   closeAllSheets();
   stopPlayback();
+  watchPcStatus(false);
   await sb.auth.signOut();
   state.loaded = false;
   showLogin();

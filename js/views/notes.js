@@ -6,7 +6,7 @@ import { escapeHtml, highlight, icon, toast, CHECK_SVG, downloadBlob, csvField, 
 import {
   state, labelColor, labelName, TODO_CATEGORIES, tasksForNote, deleteNote, setNoteActionItems, noteById,
 } from "../store.js";
-import { pendingCards, handlePendingAction } from "../record.js";
+import { pendingCards, handlePendingAction, pcStatusLine, watchPcStatus } from "../record.js";
 
 let activeLabel = "";
 let query = "";
@@ -381,6 +381,7 @@ function shell() {
       <div class="grow"><h1>${greeting}</h1><p>${escapeHtml(sub)}</p></div>
       <button type="button" class="rec-btn" data-act="record">${icon("mic", "icon-sm")}Opnemen</button>
     </section>
+    <div data-pc>${pcStatusLine()}</div>
     <div data-pending>${pendingCards()}</div>
     <div class="search-row">
       <div class="search ${query ? "has-value" : ""}" id="search">
@@ -417,6 +418,7 @@ export default {
   after(root) {
     rootEl = root;
     root.querySelectorAll(".player").forEach((p) => loadWaveform(p));
+    watchPcStatus(true);
   },
   // Bij wijzigingen in taken alleen de actiepunten bijwerken, zodat een
   // spelende opname niet stopt.
@@ -432,6 +434,8 @@ export default {
     });
     const pend = root.querySelector("[data-pending]");
     if (pend) pend.innerHTML = pendingCards();
+    const pc = root.querySelector("[data-pc]");
+    if (pc) pc.innerHTML = pcStatusLine();
     return true;
   },
   async onClick(act, el, params, e) {
@@ -519,7 +523,7 @@ export default {
   onChange(e) {
     if (e.target.id === "sort-select") { sort = e.target.value; renderList(); }
   },
-  leave() { stopPlayback(); },
+  leave() { stopPlayback(); watchPcStatus(false); },
 };
 
 // Oude notitie zonder taken: actiepunt in de JSON afvinken.

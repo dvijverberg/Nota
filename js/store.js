@@ -53,6 +53,10 @@ export const state = {
   tasks: new Map(),
   notes: [],
   recordings: [],
+  // Instellingen per account (tabel user_settings). Geen rij = standaard.
+  settings: null,
+  // Rij "pc" uit server_status: undefined = (nog) onbekend, null = geen rij.
+  pcStatus: undefined,
   loaded: false,
   // Voltooide taken ouder dan 30 dagen laden we pas in "Voltooid".
   completedSince: null,
@@ -137,7 +141,7 @@ export function loadAll() {
   loading = (async () => {
     try {
       const since = new Date(Date.now() - 30 * 864e5).toISOString();
-      const [p, s, l, f, open, done, noteDone, n] = await Promise.all([
+      const [p, s, l, f, open, done, noteDone, n, us] = await Promise.all([
         sb.from("projects").select("*").order("sort_order", { ascending: true }),
         sb.from("sections").select("*").order("sort_order", { ascending: true }),
         sb.from("labels").select("*").order("sort_order", { ascending: true }),
@@ -148,6 +152,9 @@ export function loadAll() {
         // een notitie altijd al haar actiepunten laat zien.
         sb.from("tasks").select("*").eq("completed", true).not("note_id", "is", null),
         sb.from("notes").select("*").order("id", { ascending: false }),
+        // Instellingen zijn niet nodig om de app te tonen: een fout hier
+        // (bijv. tabel nog niet aangemaakt) houdt het laden niet tegen.
+        sb.from("user_settings").select("*").maybeSingle(),
       ]);
       const err = [p, s, l, f, open, done, noteDone, n].find((r) => r.error);
       if (err) return { error: err.error };
@@ -179,6 +186,8 @@ export function loadAll() {
         note.actionItems = normalizeActionItems(note.action_items);
       }
       state.notes = notes;
+      if (!us.error) state.settings = normSettings(us.data);
+      else if (!state.settings) state.settings = normSettings(null);
       state.loaded = true;
       emit();
       return { error: null };
@@ -512,6 +521,82 @@ export async function deleteFilter(id) {
   const { error } = await sb.from("filters").delete().eq("id", id);
   if (error) { state.filters.push(f); emit(); fail(error, "Verwijderen"); return false; }
   return true;
+}
+
+// ---------- Instellingen ----------
+export const DEFAULT_SETTINGS = { digest_enabled: false, digest_time: "08:00", calendar_token: null };
+
+function normSettings(row) {
+  const out = { ...DEFAULT_SETTINGS };
+  if (row) {
+    out.digest_enabled = !!row.digest_enabled;
+    if (row.digest_time) out.digest_time = String(row.digest_time).slice(0, 5);
+    out.calendar_token = row.calendar_token || null;
+  }
+  return out;
+}
+
+export function settings() { return state.settings || { ...DEFAULT_SETTINGS }; }
+
+async function userId() {
+  if (state.user?.id) return state.user.id;
+  const { data } = await sb.auth.getSession();
+  return data?.session?.user?.id || null;
+}
+
+// Alleen de meegegeven velden; last_digest_date en updated_at beheert de server.
+export async function saveSettings(patch) {
+  const cur = settings();
+  const prev = {};
+  for (const k of Object.keys(patch)) prev[k] = cur[k];
+  state.settings = { ...cur, ...patch };
+  emit();
+  const id = await userId();
+  const { error } = id
+    ? await sb.from("user_settings").upsert({ user_id: id, ...patch }, { onConflict: "user_id" })
+    : { error: new Error("niet ingelogd") };
+  if (error) { state.settings = { ...settings(), ...prev }; emit(); fail(error); return false; }
+  return true;
+}
+
+// ---------- Computer (pc-server) ----------
+// De pc werkt last_seen elke ~30 s bij zolang de server draait.
+export const PC_ONLINE_MS = 90_000;
+
+export async function loadPcStatus() {
+  const { data, error } = await sb.from("server_status").select("*").eq("id", "pc").maybeSingle();
+  if (error) return; // tabel (nog) niet bereikbaar: status onbekend laten
+  state.pcStatus = data || null;
+  emit();
+}
+
+// "online" | "offline" | "missing" | null (onbekend)
+export function pcState(now = Date.now()) {
+  const s = state.pcStatus;
+  if (s === undefined) return null;
+  if (!s || !s.last_seen) return "missing";
+  const t = new Date(s.last_seen).getTime();
+  return !isNaN(t) && now - t <= PC_ONLINE_MS ? "online" : "offline";
+}
+
+// "zojuist", "12 min geleden", "2 uur geleden", "vandaag 14:05",
+// "gisteren 21:30", "3 dagen geleden", "4 nov."
+export function agoText(iso, now = new Date()) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const min = Math.floor((now - d) / 60000);
+  if (min < 1) return "zojuist";
+  if (min < 60) return `${min} min geleden`;
+  if (min < 180) return `${Math.floor(min / 60)} uur geleden`;
+  const clock = d.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(d)) / 864e5);
+  if (days <= 0) return `vandaag ${clock}`;
+  if (days === 1) return `gisteren ${clock}`;
+  if (days < 7) return `${days} dagen geleden`;
+  const opts = { day: "numeric", month: "short" };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("nl-NL", opts);
 }
 
 // ---------- Notities ----------

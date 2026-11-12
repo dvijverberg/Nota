@@ -5,7 +5,7 @@
 // opname gewoon tot hij weer aangaat.
 
 import { openSheet, escapeHtml, icon, toast, haptic, reducedMotion, uuid, confirmSheet } from "./ui.js";
-import { sb, state, emit, projectById, activeProjects, loadAll, noteById } from "./store.js";
+import { sb, state, emit, projectById, activeProjects, loadAll, noteById, loadPcStatus, pcState, agoText } from "./store.js";
 import { projectSheet } from "./pickers.js";
 
 const MAX_SEC = 600;
@@ -213,7 +213,9 @@ export async function upload(item) {
   if (i >= 0) failedUploads.splice(i, 1);
   if (row) state.recordings = [row, ...state.recordings.filter((r) => r.id !== row.id)];
   emit();
-  toast("Opname opgeslagen. Je computer verwerkt hem zodra hij aanstaat.");
+  toast(pcState() === "online"
+    ? "Opname opgeslagen. Je computer verwerkt hem zo."
+    : "Opname opgeslagen. Je computer verwerkt hem zodra hij aanstaat.");
   startPolling();
   return true;
 }
@@ -236,6 +238,7 @@ export async function deleteRecording(id) {
 }
 
 export async function loadRecordings() {
+  loadPcStatus();
   const { data, error } = await sb.from("recordings").select("*").in("status", PENDING).order("recorded_at", { ascending: false });
   if (error) return; // tabel (nog) niet bereikbaar: geen kaartjes
   state.recordings = data || [];
@@ -257,6 +260,7 @@ async function poll() {
   if (document.hidden) { pollTimer = setTimeout(poll, 10000); return; }
   const ids = state.recordings.filter((r) => r.status === "wachtend" || r.status === "bezig").map((r) => r.id);
   if (!ids.length) return;
+  loadPcStatus();
   const { data, error } = await sb.from("recordings").select("*").in("id", ids);
   if (error) { startPolling(); return; }
   const done = [];
@@ -278,6 +282,48 @@ async function poll() {
   }
   emit();
   startPolling();
+}
+
+// ---------- Computer aan/uit ----------
+// Elke 30 s de status ophalen zolang Notities (of Instellingen) open is en
+// de app zichtbaar is.
+let statusTimer = 0;
+let statusOn = false;
+let statusAt = 0;
+export function watchPcStatus(on) {
+  clearTimeout(statusTimer);
+  const was = statusOn;
+  statusOn = on;
+  if (!on) return;
+  // Net al opgehaald (bijv. bij het opstarten): alleen de volgende plannen.
+  if (was || Date.now() - statusAt < 5000) scheduleStatus(); else statusTick();
+}
+function scheduleStatus() {
+  clearTimeout(statusTimer);
+  if (statusOn) statusTimer = setTimeout(statusTick, 30000);
+}
+async function statusTick() {
+  if (!document.hidden) { statusAt = Date.now(); await loadPcStatus(); }
+  scheduleStatus();
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && statusOn) statusTick();
+});
+
+export function pcStatusText(st = pcState()) {
+  if (st === "online") return "Computer staat aan";
+  if (st === "offline") {
+    const ago = agoText(state.pcStatus.last_seen);
+    return "Computer staat uit" + (ago ? " · laatst gezien " + ago : "");
+  }
+  if (st === "missing") return "Computer nog niet verbonden";
+  return "";
+}
+
+export function pcStatusLine() {
+  const st = pcState();
+  if (!st) return "";
+  return `<p class="pc-line is-${st}" role="status"><span class="pc-dot" aria-hidden="true"></span>${escapeHtml(pcStatusText(st))}</p>`;
 }
 
 export function pendingCards() {
@@ -305,10 +351,12 @@ export function pendingCards() {
         </div>`);
     } else {
       const busy = r.status === "bezig";
+      const pc = pcState();
+      const waitText = pc === "online" ? "Wordt zo opgepakt" : pc === "offline" ? "Wacht op je computer (staat uit)" : "Wacht op je computer";
       cards.push(`
         <div class="card pending ${busy ? "is-busy" : ""}">
           <span class="pending-ic">${busy ? `<svg class="icon spin"><use href="#i-rings"/></svg>` : icon("clock")}</span>
-          <div class="grow"><b>${busy ? "Wordt verwerkt…" : "Wacht op je computer"}</b><span>${meta}</span></div>
+          <div class="grow"><b>${busy ? "Wordt verwerkt…" : waitText}</b><span>${meta}</span></div>
         </div>`);
     }
   }
