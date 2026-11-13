@@ -342,8 +342,14 @@ export function menuSheet({ title = "", sub = "", groups }) {
       html: `
         ${title ? `<p class="sheet-title">${escapeHtml(title)}</p>` : ""}
         ${sub ? `<p class="sheet-sub">${escapeHtml(sub)}</p>` : ""}
+        <div class="sheet-scroll menu-scroll">
         ${groups.map((g) => `
           ${g.label ? `<p class="sheet-label">${escapeHtml(g.label)}</p>` : ""}
+          ${g.segmented ? `
+          <div class="segmented" style="--n:${g.items.length}" role="group" aria-label="${escapeHtml(g.label || "")}">
+            ${g.items.map((it) => `
+              <button type="button" class="sheet-item seg" data-id="${escapeHtml(it.id)}" aria-pressed="${!!it.checked}">${escapeHtml(it.label)}</button>`).join("")}
+          </div>` : `
           <div class="sheet-group">
             ${g.items.map((it) => `
               <button type="button" class="sheet-item ${it.danger ? "danger" : ""}" data-id="${escapeHtml(it.id)}" ${it.checked != null ? `aria-pressed="${!!it.checked}"` : ""}>
@@ -352,7 +358,8 @@ export function menuSheet({ title = "", sub = "", groups }) {
                 ${it.hint ? `<span class="hint">${escapeHtml(it.hint)}</span>` : ""}
                 ${it.checked ? icon("check", "icon-sm tick") : ""}
               </button>`).join("")}
-          </div>`).join("")}`,
+          </div>`}`).join("")}
+        </div>`,
       onClose: () => { if (!answered) resolve(null); },
     });
     sh.el.addEventListener("click", (e) => {

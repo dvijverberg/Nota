@@ -144,6 +144,7 @@ export const settingsView = {
   tab: "bladeren",
   status: true, // toont de pc-status
   topbar: () => ({ title: "Instellingen", back: true, actions: [] }),
+  hideFab: true,
   render() {
     const email = state.user?.email || "";
     let theme = "auto";
@@ -229,8 +230,8 @@ export const settingsView = {
 const PUSH_TEXT = {
   on: "Aan op dit apparaat",
   off: "Uit",
-  denied: "Geblokkeerd in je browserinstellingen",
-  unsupported: "Niet beschikbaar in deze browser",
+  denied: "Geblokkeerd",
+  unsupported: "Niet beschikbaar",
   "ios-install": "Uit",
 };
 

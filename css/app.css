@@ -1547,7 +1547,7 @@ label.list-row { cursor: pointer; }
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   background: var(--surface-2);
@@ -2567,3 +2567,50 @@ li.task.board-ghost {
 .day-chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; }
 .day-chips .chip { justify-content: center; padding: 0; height: 40px; }
 .stats-help { margin: 4px 8px 14px; color: var(--muted); font-size: 13px; }
+
+
+/* ==========================================================================
+   Sheets: nooit inhoud samendrukken
+   ========================================================================== */
+/* Een sheet is een flex-kolom met een max-hoogte. Blokken met overflow:hidden
+   mochten daardoor krimpen en werden afgeknipt. Alleen het scrollgebied mag
+   krimpen; de rest houdt zijn eigen hoogte. */
+.sheet > :not(.sheet-scroll) { flex-shrink: 0; }
+.menu-scroll { padding-bottom: 2px; }
+.menu-scroll > :first-child.sheet-label { margin-top: 4px; }
+.menu-scroll > .sheet-group:last-child, .menu-scroll > .segmented:last-child { margin-bottom: 0; }
+
+/* Gesegmenteerde keuze in menu's (Weergave, Sorteren). */
+.segmented .sheet-item.seg {
+  min-height: 0;
+  height: 40px;
+  padding: 0 6px;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-2);
+  border-top: none;
+  border-radius: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.segmented .sheet-item.seg[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ---------- Uitlijning ---------- */
+/* Waarde rechts in een rij, nooit tegen het label aan. */
+.list-row .hint { margin-left: auto; padding-left: 12px; text-align: right; flex-shrink: 0; max-width: 55%; }
+.list-row .grow + .hint { margin-left: 0; }
+/* Meta-regel van een taak blijft één regel; wat niet past valt weg. */
+.meta-l { flex-wrap: nowrap; overflow: hidden; }
+/* Lege eigenschap in de taakdetails is grijs, net als de andere. */
+.sheet .detail-props .prop-input.is-empty { color: var(--muted); font-weight: 400; }
+/* Donker: gekozen segment duidelijk lichter dan de achtergrond. */
+:root[data-theme="dark"] .segmented [aria-pressed="true"] { background: color-mix(in srgb, var(--ink) 14%, var(--surface-2)); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .segmented [aria-pressed="true"] { background: color-mix(in srgb, var(--ink) 14%, var(--surface-2)); }
+}

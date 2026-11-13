@@ -110,6 +110,7 @@ function stepper(k, label, value, sub) {
 export default {
   tab: "bladeren",
   topbar: () => ({ title: "Productiviteit", back: true, actions: [] }),
+  hideFab: true,
 
   render() {
     if (!completionsLoaded()) {

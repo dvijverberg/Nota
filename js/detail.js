@@ -129,7 +129,7 @@ export function openTaskDetail(id) {
         <div class="prop">
           <label class="prop-btn">
             <span class="prop-ic">${icon("hourglass")}</span><span class="prop-label">Duur</span>
-            <select class="prop-input" data-f="duration" aria-label="Duur">
+            <select class="prop-input ${t.duration_min ? "" : "is-empty"}" data-f="duration" aria-label="Duur">
               ${[...new Set([...DURATIONS, t.duration_min || 0])].sort((a, b) => a - b).map((m) => `<option value="${m}" ${m === (t.duration_min || 0) ? "selected" : ""}>${durLabel(m)}</option>`).join("")}
             </select>
           </label>

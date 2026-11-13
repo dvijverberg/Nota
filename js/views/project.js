@@ -134,14 +134,13 @@ async function projectMenu(params) {
     { id: "section", label: "Sectie toevoegen", icon: "section" },
     { id: "fav", label: p.favorite ? "Uit favorieten" : "Aan favorieten toevoegen", icon: p.favorite ? "star-fill" : "star" },
   ] });
-  if (p) groups.push({ label: "Weergave", items: [
+  if (p) groups.push({ label: "Weergave", segmented: true, items: [
     { id: "view:list", label: "Lijst", checked: !isBoard(p) },
     { id: "view:board", label: "Bord", checked: isBoard(p) },
   ] });
-  groups.push({ label: "Sorteren", items: SORTS.map((s) => ({ id: "sort:" + s.id, label: s.label, checked: s.id === sort })) });
+  groups.push({ label: "Sorteren", segmented: true, items: SORTS.map((s) => ({ id: "sort:" + s.id, label: s.label, checked: s.id === sort })) });
   groups.push({ items: [
     { id: "done", label: showDone ? "Voltooide taken verbergen" : "Voltooide taken tonen", icon: "check-circle" },
-    { id: "refresh", label: "Vernieuwen", icon: "refresh" },
   ] });
   if (p) groups.push({ items: [
     { id: "archive", label: "Archiveren", icon: "archive" },
