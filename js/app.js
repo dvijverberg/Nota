@@ -19,6 +19,8 @@ import notesView, { focusNote, stopPlayback } from "./views/notes.js";
 import searchView from "./views/search.js";
 import { labelView, filterView, completedView } from "./views/lists.js";
 import { browseView, settingsView, changePassword } from "./views/browse.js";
+import statsView from "./views/stats.js";
+import { loadCompletions } from "./completions.js";
 
 const loginView = $("login-view");
 const appView = $("app");
@@ -80,6 +82,7 @@ const ROUTES = [
   [/^\/notities$/, () => ({ view: notesView, params: {}, key: "notities" })],
   [/^\/bladeren$/, () => ({ view: browseView, params: {}, key: "bladeren" })],
   [/^\/voltooid$/, () => ({ view: completedView, params: {}, key: "voltooid" })],
+  [/^\/productiviteit$/, () => ({ view: statsView, params: {}, key: "productiviteit" })],
   [/^\/instellingen$/, () => ({ view: settingsView, params: {}, key: "instellingen" })],
   [/^\/zoeken$/, () => ({ view: searchView, params: {}, key: "zoeken" })],
   [/^\/project\/([^/]+)$/, (m) => ({ view: projectView, params: { id: m[1] }, key: "project/" + m[1] })],
@@ -390,6 +393,7 @@ async function refresh() {
   }
   loadError = null;
   loadRecordings();
+  loadCompletions();
 }
 
 // Vernieuwen als je terugkomt in de app (na een tijdje weg)

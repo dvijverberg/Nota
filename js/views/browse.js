@@ -12,6 +12,8 @@ import { validateWithCount, filterTasks } from "./lists.js";
 import { validateFilter } from "../parse.js";
 import { exportNotes } from "./notes.js";
 import { pushStatus, cachedPushStatus, enablePush, disablePush, sendTestPush } from "../push.js";
+import { completionsLoaded, todayCount, goals } from "../completions.js";
+import { miniRing } from "./stats.js";
 
 export const FILTER_PRESETS = [
   { name: "Prioriteit 1", query: "p1" },
@@ -43,11 +45,13 @@ export const browseView = {
     const looseLabels = [...usedLabels].filter((n) => !labels.some((l) => l.name.toLowerCase() === n.toLowerCase()));
     const filters = [...state.filters].sort(byOrder);
     const doneN = [...state.tasks.values()].filter((t) => t.completed).length;
+    const todayN = todayCount(), goal = goals().daily;
 
     return `
       <section class="intro browse-intro"><h1>Bladeren</h1></section>
       <div class="card list-card">
         ${row({ href: "#/inbox", lead: `<span class="lead-ic" style="color:var(--accent)">${icon("inbox")}</span>`, label: "Inbox", count: inboxN || "" })}
+        ${row({ href: "#/productiviteit", lead: `<span class="lead-ic">${miniRing(todayN, goal)}</span>`, label: "Productiviteit", count: completionsLoaded() ? `${todayN}/${goal} vandaag` : "" })}
         ${row({ href: "#/voltooid", lead: `<span class="lead-ic" style="color:var(--tone-today)">${icon("check-circle")}</span>`, label: "Voltooid", count: doneN || "" })}
       </div>
 
