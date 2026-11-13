@@ -204,7 +204,7 @@ export async function upload(item) {
   if (err) {
     console.warn("Upload mislukt:", err);
     if (i < 0) failedUploads.unshift(item);
-    emit();
+    emit("status");
     toast("Uploaden mislukt. Je opname staat klaar om opnieuw te proberen.", {
       action: { label: "Opnieuw proberen", fn: () => upload(item) },
     });
@@ -212,7 +212,7 @@ export async function upload(item) {
   }
   if (i >= 0) failedUploads.splice(i, 1);
   if (row) state.recordings = [row, ...state.recordings.filter((r) => r.id !== row.id)];
-  emit();
+  emit("status");
   toast(pcState() === "online"
     ? "Opname opgeslagen. Je computer verwerkt hem zo."
     : "Opname opgeslagen. Je computer verwerkt hem zodra hij aanstaat.");
@@ -223,16 +223,16 @@ export async function upload(item) {
 export function discardFailed(id) {
   const i = failedUploads.findIndex((x) => x.id === id);
   if (i >= 0) failedUploads.splice(i, 1);
-  emit();
+  emit("status");
 }
 
 export async function deleteRecording(id) {
   const r = state.recordings.find((x) => x.id === id);
   if (!r) return;
   state.recordings = state.recordings.filter((x) => x.id !== id);
-  emit();
+  emit("status");
   const { error } = await sb.from("recordings").delete().eq("id", id);
-  if (error) { state.recordings.push(r); emit(); toast("Verwijderen mislukt."); return; }
+  if (error) { state.recordings.push(r); emit("status"); toast("Verwijderen mislukt."); return; }
   if (r.audio_path) await sb.storage.from("audio").remove([r.audio_path]);
   toast("Opname verwijderd");
 }
@@ -242,7 +242,7 @@ export async function loadRecordings() {
   const { data, error } = await sb.from("recordings").select("*").in("status", PENDING).order("recorded_at", { ascending: false });
   if (error) return; // tabel (nog) niet bereikbaar: geen kaartjes
   state.recordings = data || [];
-  emit();
+  emit("status");
   startPolling();
 }
 
@@ -280,7 +280,7 @@ async function poll() {
       toast(`Notitie verwerkt: ${note?.title || "nieuwe notitie"}`);
     }
   }
-  emit();
+  emit("status");
   startPolling();
 }
 

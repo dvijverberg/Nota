@@ -262,7 +262,10 @@ function enableSwipeClose(sheet) {
     dy = e.touches[0].clientY - startY;
     if (!active && dy > 8) { active = true; el.style.transition = "none"; }
     if (active) el.style.transform = `translateY(${Math.max(0, dy)}px)`;
-  }, { passive: true });
+    // De pagina achter de sheet niet laten meescrollen: niet tijdens het
+    // omlaag vegen, en niet op delen van de sheet die zelf niet scrollen.
+    if (e.cancelable && (active || !e.target.closest(".sheet-scroll, textarea, .chips"))) e.preventDefault();
+  }, { passive: false });
   el.addEventListener("touchend", () => {
     if (startY === null) return;
     el.style.transition = "";

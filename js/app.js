@@ -5,8 +5,10 @@ import {
   $, escapeHtml, icon, toast, actions, haptic, initSheets, trackKeyboard, sheetStack,
   handleSheetPop, closeAllSheets, whenHistoryIdle,
 } from "./ui.js";
-import { sb, state, subscribe, loadAll, getTask, rescheduleTask } from "./store.js";
-import { registerServiceWorker, resyncPush } from "./push.js";
+import { sb, state, subscribe, loadAll, getTask, rescheduleTask, hasPendingWrites } from "./store.js";
+import { registerServiceWorker, resyncPush, checkForUpdate } from "./push.js";
+import { morph, rememberHtml } from "./morph.js";
+import { hydrate, startCaching, clearCache, saveSoon } from "./cache.js";
 import { bindTaskInteractions } from "./tasks.js";
 import { openQuickAdd } from "./quickadd.js";
 import { openTaskDetail } from "./detail.js";
@@ -159,8 +161,13 @@ function tabOf(r) {
   return typeof t === "function" ? t(r.params) : t;
 }
 
+let lastTopbar = "";
 function renderTopbar(r) {
   const tb = r.view.topbar ? r.view.topbar(r.params) : { title: "" };
+  // Niets veranderd: niet opnieuw opbouwen (scheelt werk bij elke wijziging).
+  const sig = JSON.stringify(tb);
+  if (sig === lastTopbar && topbar.firstChild) { updateTopbarScroll(); return; }
+  lastTopbar = sig;
   const stripLeft = topbar.querySelector(".strip")?.scrollLeft || 0;
   const focusedId = topbar.contains(document.activeElement) ? document.activeElement.id : null;
   if (tb.search) {
@@ -214,12 +221,21 @@ function skeleton() {
 }
 
 let loadError = null;
+let lastHtml = null;
+let dragRetry = 0;
 function render({ first = false, force = false } = {}) {
   if (!current) return;
   const r = current;
+  // Tijdens slepen niet opnieuw opbouwen; daarna alsnog.
+  if (!first && document.body.classList.contains("is-dragging")) {
+    clearTimeout(dragRetry);
+    dragRetry = setTimeout(() => render({ first: false, force }), 250);
+    return;
+  }
   renderTopbar(r);
   renderTabs(r);
   if (!state.loaded) {
+    lastHtml = null;
     viewEl.innerHTML = loadError
       ? `<div class="card empty"><h3>Laden mislukt</h3><p>${escapeHtml(loadError)}</p><button type="button" class="btn-ghost" data-act="retry">Opnieuw proberen</button></div>`
       : skeleton();
@@ -227,13 +243,20 @@ function render({ first = false, force = false } = {}) {
   }
   // Na "rerender" altijd volledig opbouwen, anders mag de view zelf bijwerken.
   if (!first && !force && r.view.update && r.view.update(viewEl, r.params)) return;
-  viewEl.innerHTML = r.view.render(r.params) + `<div class="footer-space"></div>`;
+  const html = r.view.render(r.params) + `<div class="footer-space"></div>`;
+  // Views zonder eigen update(): alleen bijwerken wat veranderde (morph),
+  // zodat scrollpositie, focus en lopende gebaren blijven staan.
+  if (first || r.view.update || lastHtml === null) { viewEl.innerHTML = html; if (!r.view.update) rememberHtml(viewEl, html); }
+  else if (html !== lastHtml) morph(viewEl, html);
+  lastHtml = r.view.update ? null : html;
   if (r.view.after) r.view.after(viewEl, r.params, { first });
 }
 
 actions.rerender = () => render({ first: false, force: true });
-subscribe(() => {
+subscribe((kinds) => {
   if (!current) return;
+  // Alleen opname-/pc-status veranderd: views die dat niet tonen slaan we over.
+  if (kinds && !kinds.has("data") && !current.view.status) return;
   // Store-wijziging: alleen bijwerken, view mag zelf beslissen (notities).
   render({ first: false });
 });
@@ -256,6 +279,7 @@ actions.logout = async () => {
   closeAllSheets();
   stopPlayback();
   watchPcStatus(false);
+  clearCache();
   await sb.auth.signOut();
   state.loaded = false;
   showLogin();
@@ -389,6 +413,7 @@ async function refresh() {
     return;
   }
   loadError = null;
+  saveSoon();
   loadRecordings();
 }
 
@@ -397,7 +422,7 @@ let hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (appView.style.display === "block") {
-    if (Date.now() - hiddenAt > 60_000) refresh();
+    if (Date.now() - hiddenAt > 60_000) { refresh(); checkForUpdate(); }
     startPolling();
   }
 });
@@ -411,6 +436,9 @@ function showLogin() {
 let booted = false;
 async function showApp(session) {
   state.user = session?.user || state.user;
+  // Laatst bekende gegevens meteen tonen; vernieuwen gaat op de achtergrond.
+  if (!state.loaded && state.user?.id) hydrate(state.user.id);
+  startCaching(state.user?.id);
   loginView.style.display = "none";
   appView.style.display = "block";
   document.body.classList.add("in-app");
@@ -487,7 +515,29 @@ registerServiceWorker({
     const hash = url.slice(url.indexOf("#"));
     if (url.includes("#") && hash.startsWith("#/")) navigate(hash);
   },
+  // Nieuwe versie binnen: meteen herladen als je net opstart en nog niets
+  // aan het doen bent, anders krijg je hem bij de volgende start.
+  onUpdate: () => {
+    const fresh = performance.now() - lastWake < 6000 && !touchedSinceWake;
+    const idle = !sheetStack.length && !hasPendingWrites() &&
+      !(document.activeElement && document.activeElement.matches("input, textarea, select"));
+    let recent = false;
+    try { recent = Date.now() - Number(sessionStorage.getItem("nota-reloaded") || 0) < 30_000; } catch {}
+    if (fresh && idle && !recent) {
+      try { sessionStorage.setItem("nota-reloaded", String(Date.now())); } catch {}
+      location.reload();
+    }
+  },
 });
+let lastWake = 0, touchedSinceWake = false;
+const wake = () => { lastWake = performance.now(); touchedSinceWake = false; };
+wake();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) wake(); });
+["pointerdown", "keydown"].forEach((t) => document.addEventListener(t, () => { touchedSinceWake = true; }, { capture: true, passive: true }));
+
+// Na het laden: kijken of er een nieuwe versie van de app is.
+if (document.readyState === "complete") checkForUpdate();
+else addEventListener("load", () => checkForUpdate(), { once: true });
 
 // Automatisch inloggen als er al een geldige sessie is
 sb.auth.getSession().then(({ data: { session } }) => {

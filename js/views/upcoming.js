@@ -125,11 +125,16 @@ function select(ds, scroll) {
   if (scroll) {
     const g = document.getElementById("day-" + ds);
     if (!g) return;
+    // Rijen boven de gekozen dag echt laten opmaken (ze staan op
+    // content-visibility: auto), anders klopt de doelpositie niet.
+    const groups = [...document.querySelectorAll("#view .group")];
+    const above = groups.slice(0, groups.indexOf(g));
+    above.forEach((x) => x.classList.add("cv-off"));
     const bar = document.getElementById("topbar");
     const y = g.getBoundingClientRect().top + scrollY - bar.offsetHeight - 4;
     scrollingTo = ds;
     window.scrollTo({ top: ds === todayStr() ? 0 : y, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     clearTimeout(select.t);
-    select.t = setTimeout(() => { scrollingTo = null; }, 700);
+    select.t = setTimeout(() => { scrollingTo = null; above.forEach((x) => x.classList.remove("cv-off")); }, 700);
   }
 }

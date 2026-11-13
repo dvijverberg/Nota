@@ -215,7 +215,8 @@ export function openQuickAdd(ctx = {}) {
         if (!s) s = await createSection(project_id, e.project.sectionName);
         section_id = s ? s.id : null;
       }
-      if (e.labels.length) await ensureLabels(e.labels);
+      // Nieuwe labels staan meteen lokaal; de taak hoeft niet op de server te wachten.
+      if (e.labels.length) ensureLabels(e.labels);
       const labels = e.labels.map((n) => labelByName(n)?.name || n);
       const fields = {
         title: parsed.title,

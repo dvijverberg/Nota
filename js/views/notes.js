@@ -4,7 +4,7 @@
 import { formatDue } from "../parse.js";
 import { escapeHtml, highlight, icon, toast, CHECK_SVG, downloadBlob, csvField, openSheet, confirmSheet, actions, haptic, menuSheet } from "../ui.js";
 import {
-  state, labelColor, labelName, TODO_CATEGORIES, tasksForNote, deleteNote, setNoteActionItems, noteById,
+  state, labelColor, labelName, TODO_CATEGORIES, deleteNote, setNoteActionItems, noteById,
 } from "../store.js";
 import { pendingCards, handlePendingAction, pcStatusLine, watchPcStatus } from "../record.js";
 
@@ -76,14 +76,32 @@ export function exportNotes(kind, notes) {
 }
 
 // ---------- Filteren / sorteren ----------
+// Taken per notitie, één keer per weergave opgebouwd (i.p.v. per notitie
+// door alle taken te lopen). Elke ingang (render/update/...) zet hem op null.
+let byNote = null;
+function noteTasks(id) {
+  if (!byNote) {
+    byNote = new Map();
+    for (const t of state.tasks.values()) {
+      if (t.note_id == null) continue;
+      const k = String(t.note_id);
+      if (!byNote.has(k)) byNote.set(k, []);
+      byNote.get(k).push(t);
+    }
+    for (const l of byNote.values()) l.sort((a, b) => (a.note_item_index ?? 0) - (b.note_item_index ?? 0));
+  }
+  return byNote.get(String(id)) || [];
+}
+
 function itemsOf(note) {
-  const tasks = tasksForNote(note.id);
+  const tasks = noteTasks(note.id);
   if (tasks.length) return tasks.map((t) => ({ task: t, text: t.title, done: t.completed }));
   // Oude notitie zonder gekoppelde taken: val terug op de JSON.
   return (note.actionItems || []).map((i, index) => ({ json: index, text: i.text, done: i.done }));
 }
 
 function getFilteredSortedNotes() {
+  byNote = null;
   const q = query.trim().toLowerCase();
   const filtered = state.notes.filter((note) => {
     if (activeLabel && note.label !== activeLabel) return false;
@@ -219,9 +237,10 @@ function listHtml() {
 function renderList() {
   const list = rootEl && rootEl.querySelector("#notes-list");
   if (!list) return;
+  byNote = null;
   stopPlayback();
   list.innerHTML = listHtml();
-  list.querySelectorAll(".player").forEach((p) => loadWaveform(p));
+  watchWaves(list);
 }
 
 // ---------- Golfvorm & afspelen ----------
@@ -239,6 +258,35 @@ function cachedPeaks(note) {
     const raw = localStorage.getItem("nota-wave:" + note.audio_path);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
+}
+
+// Golfvormen pas berekenen als de speler in beeld komt, één tegelijk: anders
+// downloadt en decodeert de telefoon bij het openen alle opnames tegelijk.
+let waveObserver = null;
+const waveQueue = [];
+let waveBusy = false;
+function watchWaves(root) {
+  if (!("IntersectionObserver" in window)) { root.querySelectorAll(".player").forEach((p) => queueWave(p)); return; }
+  if (!waveObserver) {
+    waveObserver = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { waveObserver.unobserve(e.target); queueWave(e.target); }
+    }, { rootMargin: "300px 0px" });
+  }
+  root.querySelectorAll(".player").forEach((p) => {
+    const note = noteById(p.dataset.id);
+    if (note && note.audioUrl && !cachedPeaks(note)) waveObserver.observe(p);
+  });
+}
+function queueWave(player) {
+  if (!waveQueue.includes(player)) waveQueue.push(player);
+  if (!waveBusy) nextWave();
+}
+async function nextWave() {
+  const p = waveQueue.shift();
+  if (!p) { waveBusy = false; return; }
+  waveBusy = true;
+  if (p.isConnected) await loadWaveform(p);
+  nextWave();
 }
 
 let audioCtx = null;
@@ -410,32 +458,37 @@ export default {
   tab: "notities",
   topbar: () => ({ title: "Notities", actions: [{ act: "menu", icon: "more", label: "Meer" }] }),
   context: () => ({}),
+  status: true, // toont opnames en pc-status
   render() {
     lastNotes = state.notes;
+    byNote = null;
     stopPlayback();
     return shell();
   },
   after(root) {
     rootEl = root;
-    root.querySelectorAll(".player").forEach((p) => loadWaveform(p));
+    waveQueue.length = 0;
+    if (waveObserver) waveObserver.disconnect();
+    watchWaves(root);
     watchPcStatus(true);
   },
   // Bij wijzigingen in taken alleen de actiepunten bijwerken, zodat een
-  // spelende opname niet stopt.
+  // spelende opname niet stopt. Alleen lijsten die echt veranderden.
   update(root) {
     if (state.notes !== lastNotes) return false;
     rootEl = root;
+    byNote = null;
     root.querySelectorAll("[data-note-items]").forEach((ul) => {
       const note = noteById(ul.dataset.noteItems);
       if (!note) return;
       const html = itemsHtml(note);
+      if (shown.get(ul) === html) return;
+      shown.set(ul, html);
       ul.innerHTML = html;
       ul.hidden = !html;
     });
-    const pend = root.querySelector("[data-pending]");
-    if (pend) pend.innerHTML = pendingCards();
-    const pc = root.querySelector("[data-pc]");
-    if (pc) pc.innerHTML = pcStatusLine();
+    setIfChanged(root.querySelector("[data-pending]"), pendingCards());
+    setIfChanged(root.querySelector("[data-pc]"), pcStatusLine());
     return true;
   },
   async onClick(act, el, params, e) {
@@ -526,6 +579,15 @@ export default {
   leave() { stopPlayback(); watchPcStatus(false); },
 };
 
+// Laatst geschreven HTML per element, zodat update() niets vervangt dat
+// gelijk bleef (dan blijft ook de opmaak van de rest staan).
+const shown = new WeakMap();
+function setIfChanged(el, html) {
+  if (!el || shown.get(el) === html) return;
+  if (shown.has(el) || el.innerHTML !== html) el.innerHTML = html;
+  shown.set(el, html);
+}
+
 // Oude notitie zonder taken: actiepunt in de JSON afvinken.
 async function toggleJsonItem(btn) {
   const note = noteById(btn.dataset.noteId);
@@ -550,6 +612,10 @@ export function focusNote(id) {
     card = document.querySelector(`.note[data-id="${id}"]`);
   }
   if (!card) { toast("Deze notitie bestaat niet meer."); return; }
+  // Kaarten erboven echt opmaken (content-visibility), anders klopt de positie niet.
+  const list = card.parentElement;
+  list.classList.add("cv-off");
+  setTimeout(() => list.classList.remove("cv-off"), 1200);
   card.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
   card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
 }

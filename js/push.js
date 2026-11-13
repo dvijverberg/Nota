@@ -21,7 +21,7 @@ function supported() {
 
 // ---------- Service worker ----------
 let regPromise = null;
-export function registerServiceWorker({ onOpen } = {}) {
+export function registerServiceWorker({ onOpen, onUpdate } = {}) {
   if (!("serviceWorker" in navigator)) return null;
   if (!regPromise) {
     regPromise = navigator.serviceWorker.register("sw.js").catch((e) => {
@@ -32,9 +32,24 @@ export function registerServiceWorker({ onOpen } = {}) {
     navigator.serviceWorker.addEventListener("message", (e) => {
       const d = e.data || {};
       if (d.type === "open" && typeof d.url === "string" && onOpen) onOpen(d.url);
+      if (d.type === "updated" && onUpdate) onUpdate();
     });
+    // Eerste keer (nog geen controller): zodra de worker de pagina
+    // overneemt, krijgt hij de lijst met bestanden om te bewaren.
+    navigator.serviceWorker.addEventListener("controllerchange", () => checkForUpdate());
   }
   return regPromise;
+}
+
+// Vraagt de service worker om de app-bestanden te verversen. De bestanden
+// die deze pagina laadde gaan mee, zodat hij weet wat hij moet bewaren.
+let lastCheck = 0;
+export function checkForUpdate() {
+  const sw = "serviceWorker" in navigator && navigator.serviceWorker.controller;
+  if (!sw || Date.now() - lastCheck < 30_000) return;
+  lastCheck = Date.now();
+  const urls = performance.getEntriesByType("resource").map((r) => r.name).filter((u) => u.startsWith(location.origin));
+  try { sw.postMessage({ type: "check", urls }); } catch {}
 }
 
 async function registration() {

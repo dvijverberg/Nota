@@ -138,6 +138,7 @@ export async function newFilter() {
 // ---------- Instellingen ----------
 export const settingsView = {
   tab: "bladeren",
+  status: true, // toont de pc-status
   topbar: () => ({ title: "Instellingen", back: true, actions: [] }),
   render() {
     const email = state.user?.email || "";

@@ -66,15 +66,59 @@ export const state = {
 const listeners = new Set();
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 let emitQueued = false;
-// Bundelt meerdere wijzigingen in één render.
-export function emit() {
+let emitKinds = new Set();
+// Telt elke emit(); opzoektabellen (zoals childIndex) vervallen dan.
+let rev = 0;
+// Bundelt meerdere wijzigingen in één render. Luisteraars krijgen mee wat
+// er veranderde: "data" (taken, projecten, ...) of "status" (alleen
+// opnames/pc-status), zodat een view zonder status niet hoeft te renderen.
+export function emit(kind = "data") {
+  rev++;
+  emitKinds.add(kind);
   if (emitQueued) return;
   emitQueued = true;
   queueMicrotask(() => {
     emitQueued = false;
-    listeners.forEach((fn) => { try { fn(); } catch (e) { console.warn(e); } });
+    const kinds = emitKinds;
+    emitKinds = new Set();
+    listeners.forEach((fn) => { try { fn(kinds); } catch (e) { console.warn(e); } });
   });
 }
+
+// ---------- Lopende schrijfacties ----------
+// Zolang een wijziging onderweg is (of tijdens een loadAll() gedaan is),
+// mag het antwoord van die loadAll() de lokale versie niet overschrijven.
+const inflight = new Map(); // id -> aantal lopende writes
+let loadGuard = null;       // ids aangeraakt tijdens de lopende loadAll()
+async function tracked(ids, req) {
+  for (const id of ids) {
+    inflight.set(id, (inflight.get(id) || 0) + 1);
+    if (loadGuard) loadGuard.add(id);
+  }
+  try { return await req; }
+  finally {
+    for (const id of ids) {
+      const n = (inflight.get(id) || 1) - 1;
+      if (n) inflight.set(id, n); else inflight.delete(id);
+    }
+  }
+}
+export function hasPendingWrites() { return inflight.size > 0; }
+
+// Verse rijen uit de database, maar met de lokale versie voor ids in guard.
+function mergeRows(fresh, local, guard) {
+  if (!guard.size) return fresh;
+  const byId = new Map(local.map((x) => [x.id, x]));
+  const out = fresh.filter((x) => !guard.has(x.id) || byId.has(x.id)).map((x) => (guard.has(x.id) ? byId.get(x.id) : x));
+  const seen = new Set(out.map((x) => x.id));
+  for (const id of guard) if (byId.has(id) && !seen.has(id)) out.push(byId.get(id));
+  return out;
+}
+
+// Ondertekende audio-links (1 uur geldig) per pad, zodat vernieuwen niet
+// steeds opnieuw hoeft te ondertekenen en de eerste weergave niet wacht.
+export const audioUrls = new Map(); // audio_path -> { url, at }
+const URL_TTL = 50 * 60 * 1000;
 
 function fail(error, what = "Opslaan") {
   console.warn(what + " mislukt:", error);
@@ -107,8 +151,24 @@ export function activeProjects() {
 export function sectionsOf(projectId) {
   return state.sections.filter((s) => s.project_id === projectId).sort(byOrder);
 }
+// Subtaken per ouder, één keer opgebouwd per wijziging (emit) i.p.v. per
+// taakrij door alle taken te lopen. Na een wijziging dus altijd emit().
+let kidsMap = null, kidsRev = -1, kidsOf = null;
+function childIndex() {
+  if (kidsRev === rev && kidsOf === state.tasks) return kidsMap;
+  kidsMap = new Map();
+  for (const t of state.tasks.values()) {
+    if (!t.parent_id) continue;
+    const l = kidsMap.get(t.parent_id);
+    if (l) l.push(t); else kidsMap.set(t.parent_id, [t]);
+  }
+  for (const l of kidsMap.values()) l.sort(byOrder);
+  kidsRev = rev; kidsOf = state.tasks;
+  return kidsMap;
+}
 export function childrenOf(taskId, { includeCompleted = true } = {}) {
-  return allTasks().filter((t) => t.parent_id === taskId && (includeCompleted || !t.completed)).sort(byOrder);
+  const l = childIndex().get(taskId) || [];
+  return includeCompleted ? l.slice() : l.filter((t) => !t.completed);
 }
 export function noteById(id) { return state.notes.find((n) => String(n.id) === String(id)) || null; }
 export function tasksForNote(noteId) {
@@ -139,6 +199,8 @@ let loading = null;
 export function loadAll() {
   if (loading) return loading;
   loading = (async () => {
+    const guard = new Set(inflight.keys());
+    loadGuard = guard;
     try {
       const since = new Date(Date.now() - 30 * 864e5).toISOString();
       const [p, s, l, f, open, done, noteDone, n, us] = await Promise.all([
@@ -159,12 +221,19 @@ export function loadAll() {
       const err = [p, s, l, f, open, done, noteDone, n].find((r) => r.error);
       if (err) return { error: err.error };
 
-      state.projects = p.data || [];
-      state.sections = s.data || [];
-      state.labels = l.data || [];
-      state.filters = f.data || [];
+      state.projects = mergeRows(p.data || [], state.projects, guard);
+      state.sections = mergeRows(s.data || [], state.sections, guard);
+      state.labels = mergeRows(l.data || [], state.labels, guard);
+      state.filters = mergeRows(f.data || [], state.filters, guard);
       const tasks = new Map();
       for (const t of [...(open.data || []), ...(done.data || []), ...(noteDone.data || [])]) tasks.set(t.id, normTask(t));
+      // Wat lokaal net gewijzigd/aangemaakt/verwijderd is, gaat voor.
+      for (const id of guard) {
+        if (id === "settings") continue;
+        const local = state.tasks.get(id);
+        if (local) tasks.set(id, local);
+        else tasks.delete(id);
+      }
       // Al eerder geladen oudere voltooide taken bewaren.
       if (state.allCompletedLoaded || state.completedSince) {
         for (const t of state.tasks.values()) if (t.completed && !tasks.has(t.id) && t.completed_at < since) tasks.set(t.id, t);
@@ -174,28 +243,47 @@ export function loadAll() {
       state.tasks = tasks;
 
       const notes = n.data || [];
-      // Alle audio-links in één keer ophalen i.p.v. per notitie.
-      const paths = notes.map((x) => x.audio_path).filter(Boolean);
-      const urlByPath = {};
-      if (paths.length) {
-        const { data: signed } = await sb.storage.from("audio").createSignedUrls(paths, 3600);
-        (signed || []).forEach((x) => { if (x.signedUrl) urlByPath[x.path] = x.signedUrl; });
-      }
+      // Nog geldige audio-links hergebruiken; de rest wordt hieronder
+      // ondertekend zonder dat de eerste weergave daarop wacht.
+      const now = Date.now();
+      const missing = [];
       for (const note of notes) {
-        note.audioUrl = urlByPath[note.audio_path] || null;
+        const u = note.audio_path ? audioUrls.get(note.audio_path) : null;
+        note.audioUrl = u && now - u.at < URL_TTL ? u.url : null;
+        if (note.audio_path && !note.audioUrl) missing.push(note.audio_path);
         note.actionItems = normalizeActionItems(note.action_items);
       }
       state.notes = notes;
-      if (!us.error) state.settings = normSettings(us.data);
-      else if (!state.settings) state.settings = normSettings(null);
+      if (!guard.has("settings")) {
+        if (!us.error) state.settings = normSettings(us.data);
+        else if (!state.settings) state.settings = normSettings(null);
+      }
       state.loaded = true;
       emit();
+      if (missing.length) signAudio(notes, missing);
       return { error: null };
     } finally {
       loading = null;
+      if (loadGuard === guard) loadGuard = null;
     }
   })();
   return loading;
+}
+
+// Alle ontbrekende audio-links in één keer ophalen i.p.v. per notitie.
+async function signAudio(notes, paths) {
+  let signed = null;
+  try { ({ data: signed } = await sb.storage.from("audio").createSignedUrls(paths, 3600)); } catch { return; }
+  const at = Date.now();
+  (signed || []).forEach((x) => { if (x.signedUrl) audioUrls.set(x.path, { url: x.signedUrl, at }); });
+  if (state.notes !== notes) return; // intussen opnieuw geladen
+  for (const note of notes) {
+    const u = audioUrls.get(note.audio_path);
+    if (u && !note.audioUrl) note.audioUrl = u.url;
+  }
+  // Nieuwe lijst, zodat Notities de spelers opnieuw opbouwt.
+  state.notes = notes.slice();
+  emit();
 }
 
 // Oudere voltooide taken, per blok.
@@ -241,7 +329,7 @@ export async function createTask(fields) {
   const row = { ...t };
   // Door de server beheerd: nooit zelf meesturen.
   delete row.created_at; delete row.updated_at; delete row.reminder_sent_for;
-  const { error } = await sb.from("tasks").insert(row);
+  const { error } = await tracked([t.id], sb.from("tasks").insert(row));
   if (error) { state.tasks.delete(t.id); emit(); fail(error, "Toevoegen"); return null; }
   return t;
 }
@@ -255,7 +343,7 @@ export async function updateTask(id, patch, { quiet = false } = {}) {
   Object.assign(t, patch);
   normTask(t);
   emit();
-  const { error } = await sb.from("tasks").update(patch).eq("id", id);
+  const { error } = await tracked([id], sb.from("tasks").update(patch).eq("id", id));
   if (error) {
     Object.assign(t, prev);
     emit();
@@ -276,7 +364,7 @@ export async function updateTasks(ids, patch) {
     return [id, p];
   });
   emit();
-  const { error } = await sb.from("tasks").update(patch).in("id", ids);
+  const { error } = await tracked(ids, sb.from("tasks").update(patch).in("id", ids));
   if (error) {
     prev.forEach(([id, p]) => { const t = state.tasks.get(id); if (t) Object.assign(t, p); });
     emit();
@@ -347,7 +435,7 @@ export async function rescheduleTasks(ids, due) {
 
 function descendants(id) {
   const out = [];
-  const walk = (pid) => allTasks().forEach((t) => { if (t.parent_id === pid) { out.push(t); walk(t.id); } });
+  const walk = (pid) => childrenOf(pid).forEach((t) => { out.push(t); walk(t.id); });
   walk(id);
   return out;
 }
@@ -359,7 +447,7 @@ export async function deleteTask(id) {
   const removed = [t, ...descendants(id)];
   removed.forEach((x) => state.tasks.delete(x.id));
   emit();
-  const { error } = await sb.from("tasks").delete().eq("id", id);
+  const { error } = await tracked(removed.map((x) => x.id), sb.from("tasks").delete().eq("id", id));
   if (error) { removed.forEach((x) => state.tasks.set(x.id, x)); emit(); fail(error, "Verwijderen"); return false; }
   return true;
 }
@@ -390,7 +478,7 @@ export async function createProject({ name, color = DEFAULT_COLOR, favorite = fa
   state.projects.push(p);
   emit();
   const row = { ...p }; delete row.created_at;
-  const { error } = await sb.from("projects").insert(row);
+  const { error } = await tracked([p.id], sb.from("projects").insert(row));
   if (error) { state.projects = state.projects.filter((x) => x.id !== p.id); emit(); fail(error, "Project maken"); return null; }
   return p;
 }
@@ -402,7 +490,7 @@ async function patchRow(table, list, id, patch) {
   for (const k of Object.keys(patch)) prev[k] = row[k];
   Object.assign(row, patch);
   emit();
-  const { error } = await sb.from(table).update(patch).eq("id", id);
+  const { error } = await tracked([id], sb.from(table).update(patch).eq("id", id));
   if (error) { Object.assign(row, prev); emit(); fail(error); return false; }
   return true;
 }
@@ -422,9 +510,11 @@ export async function deleteProject(id) {
   emit();
   // Eerst de taken, dan het project: zo blijft er niets zwevend achter,
   // ook als de foreign key niet cascadet.
-  const r1 = await sb.from("tasks").delete().eq("project_id", id);
-  const r2 = r1.error ? r1 : await sb.from("sections").delete().eq("project_id", id);
-  const r3 = r2.error ? r2 : await sb.from("projects").delete().eq("id", id);
+  const r3 = await tracked([id, ...secs.map((x) => x.id), ...tasks.map((t) => t.id)], (async () => {
+    const r1 = await sb.from("tasks").delete().eq("project_id", id);
+    const r2 = r1.error ? r1 : await sb.from("sections").delete().eq("project_id", id);
+    return r2.error ? r2 : await sb.from("projects").delete().eq("id", id);
+  })());
   if (r3.error) {
     state.projects.push(p); state.sections.push(...secs);
     tasks.forEach((t) => state.tasks.set(t.id, t));
@@ -439,7 +529,7 @@ export async function createSection(projectId, name) {
   state.sections.push(s);
   emit();
   const row = { ...s }; delete row.created_at;
-  const { error } = await sb.from("sections").insert(row);
+  const { error } = await tracked([s.id], sb.from("sections").insert(row));
   if (error) { state.sections = state.sections.filter((x) => x.id !== s.id); emit(); fail(error, "Sectie maken"); return null; }
   return s;
 }
@@ -451,8 +541,10 @@ export async function deleteSection(id) {
   state.sections = state.sections.filter((x) => x.id !== id);
   tasks.forEach((t) => state.tasks.delete(t.id));
   emit();
-  const r1 = await sb.from("tasks").delete().eq("section_id", id);
-  const r2 = r1.error ? r1 : await sb.from("sections").delete().eq("id", id);
+  const r2 = await tracked([id, ...tasks.map((t) => t.id)], (async () => {
+    const r1 = await sb.from("tasks").delete().eq("section_id", id);
+    return r1.error ? r1 : await sb.from("sections").delete().eq("id", id);
+  })());
   if (r2.error) { state.sections.push(s); tasks.forEach((t) => state.tasks.set(t.id, t)); emit(); fail(r2.error, "Verwijderen"); return false; }
   return true;
 }
@@ -470,7 +562,7 @@ export async function createLabel(name, color = DEFAULT_COLOR) {
   state.labels.push(l);
   emit();
   const row = { ...l }; delete row.created_at;
-  const { error } = await sb.from("labels").insert(row);
+  const { error } = await tracked([l.id], sb.from("labels").insert(row));
   if (error) { state.labels = state.labels.filter((x) => x.id !== l.id); emit(); fail(error, "Label maken"); return null; }
   return l;
 }
@@ -495,7 +587,7 @@ export async function deleteLabel(id) {
   if (!l) return false;
   state.labels = state.labels.filter((x) => x.id !== id);
   emit();
-  const { error } = await sb.from("labels").delete().eq("id", id);
+  const { error } = await tracked([id], sb.from("labels").delete().eq("id", id));
   if (error) { state.labels.push(l); emit(); fail(error, "Verwijderen"); return false; }
   const affected = allTasks().filter((t) => t.labels.includes(l.name));
   for (const t of affected) await updateTask(t.id, { labels: t.labels.filter((x) => x !== l.name) });
@@ -508,7 +600,7 @@ export async function createFilter({ name, query, color = DEFAULT_COLOR }) {
   state.filters.push(f);
   emit();
   const row = { ...f }; delete row.created_at;
-  const { error } = await sb.from("filters").insert(row);
+  const { error } = await tracked([f.id], sb.from("filters").insert(row));
   if (error) { state.filters = state.filters.filter((x) => x.id !== f.id); emit(); fail(error, "Filter maken"); return null; }
   return f;
 }
@@ -518,7 +610,7 @@ export async function deleteFilter(id) {
   if (!f) return false;
   state.filters = state.filters.filter((x) => x.id !== id);
   emit();
-  const { error } = await sb.from("filters").delete().eq("id", id);
+  const { error } = await tracked([id], sb.from("filters").delete().eq("id", id));
   if (error) { state.filters.push(f); emit(); fail(error, "Verwijderen"); return false; }
   return true;
 }
@@ -553,7 +645,7 @@ export async function saveSettings(patch) {
   emit();
   const id = await userId();
   const { error } = id
-    ? await sb.from("user_settings").upsert({ user_id: id, ...patch }, { onConflict: "user_id" })
+    ? await tracked(["settings"], sb.from("user_settings").upsert({ user_id: id, ...patch }, { onConflict: "user_id" }))
     : { error: new Error("niet ingelogd") };
   if (error) { state.settings = { ...settings(), ...prev }; emit(); fail(error); return false; }
   return true;
@@ -567,7 +659,7 @@ export async function loadPcStatus() {
   const { data, error } = await sb.from("server_status").select("*").eq("id", "pc").maybeSingle();
   if (error) return; // tabel (nog) niet bereikbaar: status onbekend laten
   state.pcStatus = data || null;
-  emit();
+  emit("status");
 }
 
 // "online" | "offline" | "missing" | null (onbekend)
@@ -603,10 +695,17 @@ export function agoText(iso, now = new Date()) {
 // Verwijderen: rij + audiobestand direct uit Supabase. De pc haalt dit
 // later vanzelf op via reconcile_with_cloud() in app.py.
 export async function deleteNote(note) {
-  const { error } = await sb.from("notes").delete().eq("id", note.id);
-  if (error) { toast("Verwijderen mislukt: " + error.message); return false; }
-  if (note.audio_path) await sb.storage.from("audio").remove([note.audio_path]);
+  // Meteen weg uit beeld; bij een fout weer terugzetten.
   state.notes = state.notes.filter((n) => n.id !== note.id);
+  emit();
+  const { error } = await sb.from("notes").delete().eq("id", note.id);
+  if (error) {
+    if (!noteById(note.id)) state.notes = [...state.notes, note].sort((a, b) => b.id - a.id);
+    emit();
+    toast("Verwijderen mislukt: " + error.message);
+    return false;
+  }
+  if (note.audio_path) sb.storage.from("audio").remove([note.audio_path]).catch(() => {});
   // Gekoppelde taken houden we; ze verwijzen alleen niet meer naar de notitie.
   allTasks().forEach((t) => { if (String(t.note_id) === String(note.id)) t.note_id = null; });
   emit();

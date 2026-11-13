@@ -121,11 +121,13 @@ export function completeTask(id, { rowEl, keepVisible = false } = {}) {
   const t = getTask(id);
   if (!t || pendingComplete.has(id)) return;
   haptic();
-  if (rowEl) rowEl.classList.add("completing", "done");
+  // data-busy: deze rij niet bijwerken zolang het afvinken loopt (morph.js).
+  if (rowEl) { rowEl.classList.add("completing", "done"); rowEl.dataset.busy = "1"; }
   const delay = rowEl && !keepVisible && !reducedMotion() ? 600 : 0;
 
   const run = async () => {
     pendingComplete.delete(id);
+    if (rowEl) delete rowEl.dataset.busy;
     if (t.recurrence && t.due_date) {
       let next;
       try { next = nextOccurrence(t.recurrence, t.due_date, { now: new Date() }); } catch { next = null; }
