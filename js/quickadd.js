@@ -153,11 +153,11 @@ export function openQuickAdd(ctx = {}) {
   input.addEventListener("input", update);
   input.addEventListener("scroll", () => { mirror.scrollTop = input.scrollTop; });
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit({ keepOpen: true }); }
   });
   desc.addEventListener("input", () => autosize(desc));
   desc.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit({ keepOpen: true }); }
   });
 
   chips.addEventListener("click", async (e) => {
@@ -194,7 +194,9 @@ export function openQuickAdd(ctx = {}) {
   addBtn.addEventListener("click", () => submit());
 
   let busy = false;
-  async function submit() {
+  // Met de Enter-toets blijft het venster open voor de volgende taak (snel
+  // achter elkaar invoeren); met de knop Toevoegen sluit het.
+  async function submit({ keepOpen = false } = {}) {
     update();
     if (!parsed.title || busy) { input.focus(); return; }
     busy = true;
@@ -234,15 +236,21 @@ export function openQuickAdd(ctx = {}) {
       };
       const t = await createTask(fields);
       if (!t) return;
-      // Todoist-gedrag: sheet blijft open voor de volgende taak, project blijft staan.
+      const where = parent ? "subtaken" : project_id ? (projectById(project_id)?.name || "project") : "Inbox";
+      const openTask = { label: "Openen", fn: () => { sh.close(); actions.openTask(t.id); } };
+      if (!keepOpen) {
+        sh.close();
+        toast(`Toegevoegd aan ${where}`, { action: openTask });
+        return;
+      }
+      // Enter: venster blijft open voor de volgende taak, project blijft staan.
       input.value = "";
       desc.value = "";
       autosize(desc);
       const keepProject = e.project.isNew ? { project_id, section_id: null } : (manual.project || (e.project.project_id ? { project_id, section_id } : null));
       manual = { ...defaults(), project: keepProject };
       update();
-      const where = parent ? "subtaken" : project_id ? (projectById(project_id)?.name || "project") : "Inbox";
-      toast(`Toegevoegd aan ${where}`, { action: { label: "Openen", fn: () => { sh.close(); actions.openTask(t.id); } } });
+      toast(`Toegevoegd aan ${where}`, { action: openTask });
       input.focus({ preventScroll: true });
     } finally {
       busy = false;
