@@ -6,6 +6,7 @@ import {
   state, getTask, projectById, sectionById, childrenOf, updateTask, updateTasks,
   subtaskIds, noteById, byOrder, rescheduleTask,
 } from "./store.js";
+import { commentMeta } from "./comments.js";
 
 export const PRIORITIES = [
   { p: 1, name: "Prioriteit 1", color: "var(--p1)" },
@@ -37,6 +38,7 @@ export function taskRow(t, opts = {}) {
   if (t.reminder_at && !t.completed) meta.push(`<span class="meta-icon meta-bell" title="Herinnering">${icon("bell", "icon-xs")}</span>`);
   if (kids.length && !opts.hideSubCount) meta.push(`<span class="meta-sub">${icon("subtask", "icon-xs")}${kidsDone}/${kids.length}</span>`);
   if (t.description) meta.push(`<span class="meta-icon" title="Beschrijving">${icon("text", "icon-xs")}</span>`);
+  meta.push(...commentMeta(t.id));
   if (t.note_id && !opts.noteContext) meta.push(`<span class="meta-icon" title="Uit spraaknotitie">${icon("mic", "icon-xs")}</span>`);
   for (const l of t.labels || []) meta.push(`<span class="meta-label">${icon("tag", "icon-xs")}${highlight(l, opts.query)}</span>`);
   let place = "";

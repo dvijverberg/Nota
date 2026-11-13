@@ -4,6 +4,7 @@ import { escapeHtml, highlight, icon, actions } from "../ui.js";
 import { state, allTasks, labelColor, labelName } from "../store.js";
 import { taskList } from "../tasks.js";
 import { emptyState } from "./common.js";
+import { loadCommentIndex, searchComments } from "../comments.js";
 
 let q = "";
 let rootEl = null;
@@ -23,7 +24,8 @@ function results() {
   const tasks = allTasks().filter((t) => (t.title + "\n" + (t.description || "")).toLowerCase().includes(l))
     .sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0) || String(b.created_at).localeCompare(String(a.created_at)));
   const notes = state.notes.filter((n) => [n.title, n.summary, n.transcription].join("\n").toLowerCase().includes(l));
-  if (!tasks.length && !notes.length) return emptyState("Niets gevonden", "Probeer een ander woord.");
+  const comments = searchComments(query);
+  if (!tasks.length && !notes.length && !comments.length) return emptyState("Niets gevonden", "Probeer een ander woord.");
   let html = "";
   if (tasks.length) {
     html += `<section class="group"><div class="group-head"><h2>Taken</h2><span class="count">${tasks.length}</span></div>
@@ -39,6 +41,13 @@ function results() {
           <span>${highlight(snippet(where || n.transcription, query), query)}</span>
         </button>`;
       }).join("")}</div></section>`;
+  }
+  if (comments.length) {
+    html += `<section class="group"><div class="group-head"><h2>Opmerkingen</h2><span class="count">${comments.length}</span></div>
+      <div class="card list-card">${comments.slice(0, 30).map((c) => `<button type="button" class="note-hit" data-act="open-task" data-id="${c.task.id}">
+          <b>${escapeHtml(c.task.title)}</b>
+          <span>${highlight(snippet(c.body, query), query)}</span>
+        </button>`).join("")}</div></section>`;
   }
   return html;
 }
@@ -61,6 +70,11 @@ export default {
     if (first) {
       const input = document.getElementById("global-search");
       if (input) input.focus({ preventScroll: true });
+      // Opmerkingen pas laden als je gaat zoeken (één query).
+      loadCommentIndex().then((ok) => {
+        const el = document.getElementById("search-results");
+        if (ok && el && q.trim()) el.innerHTML = results();
+      });
     }
   },
   update(root) {
@@ -85,5 +99,6 @@ export default {
       input.focus();
     }
     if (act === "open-note") actions.openNote(el.dataset.id);
+    if (act === "open-task") actions.openTask(el.dataset.id);
   },
 };

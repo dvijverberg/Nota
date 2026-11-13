@@ -9,6 +9,7 @@ import {
 } from "./store.js";
 import { dateSheet, prioritySheet, labelsSheet, projectSheet, reminderSheet, describeReminder, safeDescribe } from "./pickers.js";
 import { PRIORITIES, taskList, bindTaskInteractions, toggleTask, shortDate, dueInfo } from "./tasks.js";
+import { mountComments } from "./comments.js";
 
 const DURATIONS = [0, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
 
@@ -43,8 +44,9 @@ export function openTaskDetail(id) {
         </div>
         <p class="detail-meta"></p>
       </div>`,
-    onClose: () => { unsub(); flush(); },
+    onClose: () => { unsub(); flush(); comments.destroy(); },
   });
+  const comments = mountComments(sh, id);
 
   const titleEl = sh.q(".detail-title");
   const descEl = sh.q(".detail-desc");

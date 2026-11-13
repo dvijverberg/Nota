@@ -352,6 +352,32 @@ function descendants(id) {
   return out;
 }
 
+// Bijlagen staan in Storage; de cascade in de database ruimt die bestanden
+// niet op. Daarom vóór het verwijderen de paden ophalen en daarna de
+// bestanden weghalen (best effort). Met kolom/waarde ook taken die niet
+// in het geheugen staan (oudere voltooide).
+async function attachmentPaths(ids, col = null, val = null) {
+  try {
+    const all = new Set(ids);
+    if (col) {
+      const { data } = await sb.from("tasks").select("id").eq(col, val);
+      (data || []).forEach((r) => all.add(r.id));
+    }
+    const list = [...all], paths = [];
+    for (let i = 0; i < list.length; i += 100) {
+      const { data } = await sb.from("task_attachments").select("path").in("task_id", list.slice(i, i + 100));
+      (data || []).forEach((r) => paths.push(r.path));
+    }
+    return paths;
+  } catch (e) { console.warn("Bijlagen opzoeken mislukt:", e); return []; }
+}
+function removeFiles(paths) {
+  if (!paths.length) return;
+  sb.storage.from("attachments").remove(paths)
+    .then((r) => { if (r && r.error) console.warn("Bijlagen opruimen mislukt:", r.error); })
+    .catch((e) => console.warn("Bijlagen opruimen mislukt:", e));
+}
+
 export async function deleteTask(id) {
   const t = state.tasks.get(id);
   if (!t) return false;
@@ -359,8 +385,10 @@ export async function deleteTask(id) {
   const removed = [t, ...descendants(id)];
   removed.forEach((x) => state.tasks.delete(x.id));
   emit();
+  const paths = await attachmentPaths(removed.map((x) => x.id));
   const { error } = await sb.from("tasks").delete().eq("id", id);
   if (error) { removed.forEach((x) => state.tasks.set(x.id, x)); emit(); fail(error, "Verwijderen"); return false; }
+  removeFiles(paths);
   return true;
 }
 
@@ -422,6 +450,7 @@ export async function deleteProject(id) {
   emit();
   // Eerst de taken, dan het project: zo blijft er niets zwevend achter,
   // ook als de foreign key niet cascadet.
+  const paths = await attachmentPaths(tasks.map((t) => t.id), "project_id", id);
   const r1 = await sb.from("tasks").delete().eq("project_id", id);
   const r2 = r1.error ? r1 : await sb.from("sections").delete().eq("project_id", id);
   const r3 = r2.error ? r2 : await sb.from("projects").delete().eq("id", id);
@@ -430,6 +459,7 @@ export async function deleteProject(id) {
     tasks.forEach((t) => state.tasks.set(t.id, t));
     emit(); fail(r3.error, "Verwijderen"); return false;
   }
+  removeFiles(paths);
   return true;
 }
 
@@ -451,9 +481,11 @@ export async function deleteSection(id) {
   state.sections = state.sections.filter((x) => x.id !== id);
   tasks.forEach((t) => state.tasks.delete(t.id));
   emit();
+  const paths = await attachmentPaths(tasks.map((t) => t.id), "section_id", id);
   const r1 = await sb.from("tasks").delete().eq("section_id", id);
   const r2 = r1.error ? r1 : await sb.from("sections").delete().eq("id", id);
   if (r2.error) { state.sections.push(s); tasks.forEach((t) => state.tasks.set(t.id, t)); emit(); fail(r2.error, "Verwijderen"); return false; }
+  removeFiles(paths);
   return true;
 }
 
