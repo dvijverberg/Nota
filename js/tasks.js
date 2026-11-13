@@ -7,6 +7,7 @@ import {
   subtaskIds, noteById, byOrder, rescheduleTask,
 } from "./store.js";
 import { commentMeta } from "./comments.js";
+import { recordRecurring, todayCount, goalJustReached } from "./completions.js";
 
 export const PRIORITIES = [
   { p: 1, name: "Prioriteit 1", color: "var(--p1)" },
@@ -130,6 +131,7 @@ export function completeTask(id, { rowEl, keepVisible = false } = {}) {
   const run = async () => {
     pendingComplete.delete(id);
     if (rowEl) delete rowEl.dataset.busy;
+    const before = todayCount();
     if (t.recurrence && t.due_date) {
       let next;
       try { next = nextOccurrence(t.recurrence, t.due_date, { now: new Date() }); } catch { next = null; }
@@ -138,8 +140,12 @@ export function completeTask(id, { rowEl, keepVisible = false } = {}) {
         if (rowEl) rowEl.classList.remove("completing", "done");
         const ok = await rescheduleTask(id, { due_date: next });
         if (ok) {
+          const undoRow = recordRecurring(t);
           const d = formatDue(next, t.due_time || null, new Date());
-          toast(`Volgende keer: ${d.text}`, { action: { label: "Ongedaan maken", fn: () => rescheduleTask(id, { due_date: prevDate }) } });
+          const goal = goalJustReached(before);
+          toast(goal ? "Dagdoel gehaald" : `Volgende keer: ${d.text}`,
+            { action: { label: "Ongedaan maken", fn: () => { undoRow(); rescheduleTask(id, { due_date: prevDate }); } } });
+          if (goal) goalToastRing();
         }
         return;
       }
@@ -148,10 +154,19 @@ export function completeTask(id, { rowEl, keepVisible = false } = {}) {
     const at = new Date().toISOString();
     const ok = await updateTasks([id, ...kids], { completed: true, completed_at: at });
     if (ok) {
-      toast("Voltooid", { action: { label: "Ongedaan maken", fn: () => updateTasks([id, ...kids], { completed: false, completed_at: null }) } });
+      const goal = goalJustReached(before);
+      toast(goal ? "Dagdoel gehaald" : "Voltooid", { action: { label: "Ongedaan maken", fn: () => updateTasks([id, ...kids], { completed: false, completed_at: null }) } });
+      if (goal) goalToastRing();
     }
   };
   if (delay) pendingComplete.set(id, setTimeout(run, delay)); else { pendingComplete.set(id, 0); run(); }
+}
+
+// Ringetje uit het logo in de toast, dat even oplicht.
+function goalToastRing() {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.insertAdjacentHTML("afterbegin", '<svg class="toast-ring" aria-hidden="true"><use href="#i-rings"/></svg>');
 }
 
 export function uncompleteTask(id) {
@@ -199,7 +214,7 @@ export function bindTaskInteractions(root, { onSchedule, keepVisible = () => fal
   root.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     const li = e.target.closest("li.task");
-    if (!li || e.target.closest(".check, .sub-toggle") || li.classList.contains("completing")) return;
+    if (!li || e.target.closest(".check, .sub-toggle, [data-no-gestures]") || li.classList.contains("completing")) return;
     const row = li.querySelector(".task-row");
     g = { li, row, x: e.clientX, y: e.clientY, dx: 0, dy: 0, mode: null, id: e.pointerId, list: li.closest("ul.task-list") };
     if (g.list && g.list.dataset.sortable) {

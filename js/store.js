@@ -66,6 +66,14 @@ export const state = {
 const listeners = new Set();
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 let emitQueued = false;
+// Afvinken en weer openzetten van taken (voor de productiviteit). fn(task, done)
+const completionHooks = new Set();
+export function onCompletion(fn) { completionHooks.add(fn); }
+function noteCompletion(t, wasDone) {
+  if (!t || !!t.completed === !!wasDone) return;
+  completionHooks.forEach((fn) => { try { fn(t, !!t.completed); } catch (e) { console.warn(e); } });
+}
+
 let emitKinds = new Set();
 // Telt elke emit(); opzoektabellen (zoals childIndex) vervallen dan.
 let rev = 0;
@@ -325,12 +333,13 @@ export async function createTask(fields) {
   });
   if (t.sort_order == null) t.sort_order = nextSortOrder(siblingsOf(t));
   state.tasks.set(t.id, t);
+  noteCompletion(t, false);
   emit();
   const row = { ...t };
   // Door de server beheerd: nooit zelf meesturen.
   delete row.created_at; delete row.updated_at; delete row.reminder_sent_for;
   const { error } = await tracked([t.id], sb.from("tasks").insert(row));
-  if (error) { state.tasks.delete(t.id); emit(); fail(error, "Toevoegen"); return null; }
+  if (error) { state.tasks.delete(t.id); noteCompletion({ ...t, completed: false }, t.completed); emit(); fail(error, "Toevoegen"); return null; }
   return t;
 }
 
@@ -340,12 +349,16 @@ export async function updateTask(id, patch, { quiet = false } = {}) {
   if ("reminder_sent_for" in patch) { patch = { ...patch }; delete patch.reminder_sent_for; }
   const prev = {};
   for (const k of Object.keys(patch)) prev[k] = t[k];
+  const wasDone = t.completed;
   Object.assign(t, patch);
   normTask(t);
+  noteCompletion(t, wasDone);
   emit();
   const { error } = await tracked([id], sb.from("tasks").update(patch).eq("id", id));
   if (error) {
+    const nowDone = t.completed;
     Object.assign(t, prev);
+    noteCompletion(t, nowDone);
     emit();
     if (!quiet) fail(error);
     return false;
@@ -360,13 +373,13 @@ export async function updateTasks(ids, patch) {
     const t = state.tasks.get(id);
     const p = {};
     for (const k of Object.keys(patch)) p[k] = t ? t[k] : undefined;
-    if (t) Object.assign(t, patch);
+    if (t) { const was = t.completed; Object.assign(t, patch); noteCompletion(t, was); }
     return [id, p];
   });
   emit();
   const { error } = await tracked(ids, sb.from("tasks").update(patch).in("id", ids));
   if (error) {
-    prev.forEach(([id, p]) => { const t = state.tasks.get(id); if (t) Object.assign(t, p); });
+    prev.forEach(([id, p]) => { const t = state.tasks.get(id); if (t) { const was = t.completed; Object.assign(t, p); noteCompletion(t, was); } });
     emit();
     fail(error);
     return false;
@@ -648,7 +661,10 @@ export async function deleteFilter(id) {
 }
 
 // ---------- Instellingen ----------
-export const DEFAULT_SETTINGS = { digest_enabled: false, digest_time: "08:00", calendar_token: null };
+export const DEFAULT_SETTINGS = {
+  digest_enabled: false, digest_time: "08:00", calendar_token: null,
+  daily_goal: 5, weekly_goal: 25, vacation_mode: false, days_off: [6, 7],
+};
 
 function normSettings(row) {
   const out = { ...DEFAULT_SETTINGS };
@@ -656,6 +672,10 @@ function normSettings(row) {
     out.digest_enabled = !!row.digest_enabled;
     if (row.digest_time) out.digest_time = String(row.digest_time).slice(0, 5);
     out.calendar_token = row.calendar_token || null;
+    if (Number(row.daily_goal) > 0) out.daily_goal = Number(row.daily_goal);
+    if (Number(row.weekly_goal) > 0) out.weekly_goal = Number(row.weekly_goal);
+    out.vacation_mode = !!row.vacation_mode;
+    if (Array.isArray(row.days_off)) out.days_off = row.days_off.map(Number).filter((d) => d >= 1 && d <= 7);
   }
   return out;
 }
